@@ -428,10 +428,9 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
         { text: "Evaluate this answer sheet based on the provided question paper and rubric (if applicable). Provide high fidelity marks. Output in raw JSON format matching the schema." }
       ];
 
-      const response = await ai.models.generateContent({
+      const model = ai.getGenerativeModel({ 
         model: "gemini-1.5-flash",
-        contents: [{ role: "user", parts }],
-        config: {
+        generationConfig: {
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
@@ -467,17 +466,24 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
         }
       });
 
-      if (!response.text) {
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts }]
+      });
+      
+      const response = result.response;
+      const text = response.text();
+
+      if (!text) {
         console.error("AI Response empty", response);
         throw new Error("AI failed to produce a response. Please check your inputs.");
       }
 
-      console.log("AI Raw Response:", response.text);
+      console.log("AI Raw Response:", text);
       let parsedResult;
       try {
-        parsedResult = JSON.parse(response.text.trim());
+        parsedResult = JSON.parse(text.trim());
       } catch (e) {
-        console.error("Failed to parse AI response as JSON:", response.text);
+        console.error("Failed to parse AI response as JSON:", text);
         throw new Error("AI produced a malformed result. Please retry.");
       }
       

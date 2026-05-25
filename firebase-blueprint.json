@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "faculty": {
+      "title": "Faculty",
+      "description": "User profile for faculty members",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "description": "Full name" },
+        "email": { "type": "string", "description": "Academic email" },
+        "facultyId": { "type": "string", "description": "College ID" },
+        "role": { "type": "string", "enum": ["professor", "assistant_professor", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "email", "facultyId"]
+    },
+    "subject": {
+      "title": "Subject",
+      "description": "Academic subjects assigned to faculty",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "semester": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "facultyId": { "type": "string", "description": "UID of the faculty" },
+        "studentCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "facultyId", "semester", "academicYear"]
+    },
+    "student": {
+      "title": "Student",
+      "description": "Student details",
+      "type": "object",
+      "properties": {
+        "rollNo": { "type": "string" },
+        "name": { "type": "string" },
+        "semester": { "type": "string" },
+        "academicYear": { "type": "string" }
+      },
+      "required": ["rollNo", "name"]
+    },
+    "evaluation": {
+      "title": "Evaluation",
+      "description": "AI evaluation result for a student",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "studentRollNo": { "type": "string" },
+        "facultyId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed"] },
+        "submissionDate": { "type": "string", "format": "date-time" },
+        "result": { "type": "object", "description": "JSON structured result from AI" }
+      },
+      "required": ["subjectId", "studentRollNo", "facultyId", "status"]
+    }
+  },
+  "firestore": {
+    "faculty/{facultyUid}": {
+      "schema": "faculty",
+      "description": "Faculty profiles"
+    },
+    "subjects/{subjectId}": {
+      "schema": "subject",
+      "description": "Subjects managed by faculty"
+    },
+    "subjects/{subjectId}/students/{studentRollNo}": {
+      "schema": "student",
+      "description": "Students enrolled in a subject"
+    },
+    "subjects/{subjectId}/evaluations/{evaluationId}": {
+      "schema": "evaluation",
+      "description": "Evaluations for students in a subject"
+    }
+  }
+}

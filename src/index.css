@@ -1,0 +1,109 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-heading: "Outfit", sans-serif;
+  --evalix-red: #AF3B3B;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 220 20% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 10%;
+    --primary: 354 50% 46%; /* #AF3B3B */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 95%;
+    --muted: 0 0% 92%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 354 50% 46% / 0.1;
+    --border: 0 0% 90%;
+    --radius: 1.25rem;
+  }
+
+  .dark {
+    --background: 222 47% 4%;
+    --foreground: 213 31% 91%;
+    --card: 222 47% 6%;
+    --card-foreground: 213 31% 91%;
+    --primary: 354 50% 46%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 47% 12%;
+    --muted: 222 47% 12%;
+    --muted-foreground: 215.4 16.3% 56.9%;
+    --accent: 354 50% 46% / 0.2;
+    --border: 222 47% 12%;
+  }
+
+  body {
+    @apply bg-background text-foreground transition-colors duration-300;
+  }
+  
+  html {
+    @apply font-sans;
+  }
+}
+
+.glass-card {
+  @apply bg-white/70 dark:bg-slate-900/70 backdrop-blur-2xl border border-white/40 dark:border-white/5 shadow-[0_8px_32px_0_rgba(175,59,59,0.05)];
+}
+
+.glass-sidebar {
+  @apply bg-white/40 dark:bg-slate-950/40 backdrop-blur-3xl border-r border-white/20 dark:border-white/5 shadow-xl;
+}
+
+.glow-red {
+  box-shadow: 0 0 30px rgba(175, 59, 59, 0.2);
+}
+
+.btn-pulse {
+  animation: pulse-red 2s infinite ease-in-out;
+}
+
+@keyframes pulse-red {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(175, 59, 59, 0.4); }
+  70% { transform: scale(1.02); box-shadow: 0 0 0 15px rgba(175, 59, 59, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(175, 59, 59, 0); }
+}
+
+/* 3D Flip Styles */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+.rotate-y-180 {
+  transform: rotateY(180deg);
+}
+
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 dark:bg-white/10 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-300 dark:bg-white/20;
+}

@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenerativeAI, SchemaType as Type } from "@google/generative-ai";
 import jwt from "jsonwebtoken";
 import multer from "multer";
 import fs from 'fs';
@@ -17,10 +17,7 @@ const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 const oauthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET) : null;
 
-const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY || "dummy_key",
-  httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-});
+const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key");
 
 const systemPrompt = `
 You are Evalix AI, a forensic academic evaluation engine. Your goal is to evaluate student answer sheets with extreme precision.
@@ -207,8 +204,9 @@ async function startServer() {
     if (!oauthClient) {
       return res.status(503).json({ error: "Google OAuth is not configured. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to Secrets." });
     }
+    const client = oauthClient;
     const redirectUri = `${getBaseUrl(req)}/auth/google/callback`;
-    const url = oauthClient.generateAuthUrl({
+    const url = client.generateAuthUrl({
       access_type: 'offline',
       scope: ['https://www.googleapis.com/auth/userinfo.profile', 'https://www.googleapis.com/auth/userinfo.email'],
       redirect_uri: redirectUri
@@ -218,13 +216,17 @@ async function startServer() {
 
   app.get(['/auth/google/callback', '/auth/google/callback/'], async (req, res) => {
     const { code } = req.query;
+    if (!oauthClient) {
+      return res.status(503).json({ error: "Google OAuth is not configured." });
+    }
+    const client = oauthClient;
     const redirectUri = `${getBaseUrl(req)}/auth/google/callback`;
     try {
-      const { tokens } = await oauthClient.getToken({
+      const { tokens } = await client.getToken({
         code: code as string,
         redirect_uri: redirectUri
       });
-      const ticket = await oauthClient.verifyIdToken({
+      const ticket = await client.verifyIdToken({
         idToken: tokens.id_token!,
         audience: GOOGLE_CLIENT_ID
       });
@@ -461,7 +463,7 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
               }
             },
             required: ["score", "total", "feedback", "questions", "summary"]
-          },
+          } as any,
           temperature: 0
         }
       });
@@ -481,7 +483,9 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
       console.log("AI Raw Response:", text);
       let parsedResult;
       try {
-        parsedResult = JSON.parse(text.trim());
+        // Strip markdown if present
+        const jsonStr = text.replace(/```json\n?|\n?```/g, '').trim();
+        parsedResult = JSON.parse(jsonStr);
       } catch (e) {
         console.error("Failed to parse AI response as JSON:", text);
         throw new Error("AI produced a malformed result. Please retry.");

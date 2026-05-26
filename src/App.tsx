@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
 import { Layout } from '@/components/layout/Layout';
@@ -13,15 +13,29 @@ import Settings from '@/pages/Settings';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { token, loading } = useAuth();
-  if (loading) return null;
-  if (!token) return <Navigate to="/login" replace />;
+  const navigate = useNavigate();
+  
+  React.useEffect(() => {
+    if (!loading && !token) {
+      navigate('/login', { replace: true });
+    }
+  }, [token, loading, navigate]);
+
+  if (loading || !token) return null;
   return <Layout>{children}</Layout>;
 };
 
 const AuthGuard = ({ children }: { children: React.ReactNode }) => {
   const { token, loading } = useAuth();
-  if (loading) return null;
-  if (token) return <Navigate to="/" replace />;
+  const navigate = useNavigate();
+  
+  React.useEffect(() => {
+    if (!loading && token) {
+      navigate('/', { replace: true });
+    }
+  }, [token, loading, navigate]);
+
+  if (loading || token) return null;
   return <>{children}</>;
 };
 

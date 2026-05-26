@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // Fallback for local development, priority for environment variables in production (Vercel)
@@ -16,16 +16,11 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const googleProvider = new GoogleAuthProvider();
 
-export const signInWithGoogle = async () => {
-  try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
-  } catch (error) {
-    console.error("Error signing in with Google:", error);
-    throw error;
-  }
-};
+// Debug warning for unconfigured deployments
+if (firebaseConfig.apiKey === "placeholder") {
+  console.error("CRITICAL: Firebase is not configured. Please set identity environment variables (VITE_FIREBASE_API_KEY, etc.) or ensure firebase-applet-config.json is present in the root.");
+}
+
+export const auth = getAuth(app);
+export const db = getFirestore(app, (import.meta.env.VITE_FIRESTORE_DATABASE_ID || localConfig.firestoreDatabaseId));

@@ -18,6 +18,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/hooks/useAuth';
 import { motion } from 'motion/react';
+import { toast } from 'sonner';
 
 const navItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -31,6 +32,11 @@ const navItems = [
 export const Layout = ({ children }: { children: React.ReactNode }) => {
   const { user, logout } = useAuth();
   const [isDark, setIsDark] = React.useState(document.documentElement.classList.contains('dark'));
+
+  const handleLogout = () => {
+    logout();
+    toast.info('Session disconnected');
+  };
 
   const toggleTheme = () => {
     const root = document.documentElement;
@@ -109,7 +115,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
           <Button 
             variant="ghost" 
-            onClick={logout}
+            onClick={handleLogout}
             className="w-full justify-start gap-3 rounded-2xl text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 px-4 h-12 border border-transparent hover:border-red-100 dark:hover:border-red-900/30 transition-all shadow-sm"
           >
             <LogOut size={18} />
@@ -137,7 +143,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 <Button 
                    variant="outline" 
                    size="sm" 
-                   onClick={logout}
+                   onClick={handleLogout}
                    className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 gap-2 h-9 px-4 rounded-xl border border-red-100 dark:border-red-900/30 transition-all"
                 >
                    <LogOut size={14} />

@@ -1,6 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { User } from '@/types';
-import { toast } from 'sonner';
 
 interface AuthContextType {
   user: User | null;
@@ -32,7 +31,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUser(user);
     localStorage.setItem('token', token);
     localStorage.setItem('user', JSON.stringify(user));
-    toast.success(`Welcome back, Professor ${user.name.split(' ')[0]}`);
   };
 
   const logout = () => {
@@ -40,7 +38,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUser(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    toast.info('Session disconnected');
   };
 
   return (

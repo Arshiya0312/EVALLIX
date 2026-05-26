@@ -7,34 +7,79 @@ import jwt from "jsonwebtoken";
 import multer from "multer";
 import fs from 'fs';
 import admin from "firebase-admin";
-import { OAuth2Client } from 'google-auth-library';
 import * as XLSX from 'xlsx';
 
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "evalix-pro-secret-2026";
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 
 // Firebase Admin Initialization
-if (!admin.apps.length) {
-  try {
-    const saVar = process.env.FIREBASE_SERVICE_ACCOUNT;
-    if (saVar) {
-      const serviceAccount = JSON.parse(saVar.trim());
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-      });
-      console.log("Firebase Admin initialized via Service Account variable.");
-    } else {
-      // Fallback to default if running in a Google environment with ADC
-      admin.initializeApp();
-      console.log("Firebase Admin initialized via application default credentials.");
+let firebaseConfig: any = {};
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  }
+} catch (e) {
+  console.warn("Could not load firebase-applet-config.json");
+}
+
+let fdb: admin.firestore.Firestore;
+
+const initFdb = (forceDefault = false) => {
+  if (!admin.apps.length) {
+    try {
+      const saVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+      if (saVar) {
+        admin.initializeApp({
+          credential: admin.credential.cert(JSON.parse(saVar.trim()))
+        });
+      } else {
+        admin.initializeApp({ projectId: firebaseConfig.projectId });
+      }
+    } catch (err) {
+      console.error("Firebase Admin init failed:", err);
     }
-  } catch (err) {
-    console.error("CRITICAL: Failed to initialize Firebase Admin:", err);
-    // Continue for now, but API calls will fail later
+  }
+
+  const rawDbId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
+  const dbId = (!forceDefault && rawDbId && rawDbId.trim() && rawDbId !== "null" && rawDbId !== "undefined") 
+    ? rawDbId.trim() 
+    : undefined;
+
+  try {
+    fdb = (dbId && dbId !== '(default)' && dbId !== 'default') 
+      ? admin.firestore(dbId) 
+      : admin.firestore();
+    console.log(`Firestore connected to: ${dbId || '(default)'}`);
+  } catch (e) {
+    console.warn("Failed to connect to specific database, falling back to (default):", e);
+    fdb = admin.firestore();
+  }
+  return fdb;
+};
+
+const getFdb = () => {
+  if (!fdb) return initFdb();
+  return fdb;
+};
+
+// Global helper for faculty doc with auto-fallback
+async function getFacultyDocRobust(uid: string) {
+  try {
+    const doc = await getFdb().collection("faculty").doc(uid).get();
+    return { doc, ref: getFdb().collection("faculty").doc(uid) };
+  } catch (err: any) {
+    // If NOT_FOUND (5) or PERMISSION_DENIED (7), and probably using a named DB
+    const currentDb = (fdb as any)?._databaseId?.database || '(default)';
+    if (currentDb !== '(default)' && (err.code === 5 || err.code === 7)) {
+      console.warn(`Firestore Error ${err.code} on "${currentDb}". Retrying with default DB...`);
+      initFdb(true); // Re-init with default
+      const doc = await getFdb().collection("faculty").doc(uid).get();
+      return { doc, ref: getFdb().collection("faculty").doc(uid) };
+    }
+    throw err;
   }
 }
-const fdb = process.env.FIRESTORE_DATABASE_ID ? admin.firestore(process.env.FIRESTORE_DATABASE_ID) : admin.firestore();
 
 interface Faculty {
   id: string;
@@ -116,52 +161,62 @@ async function startServer() {
     }
   };
 
-  app.post("/api/auth/demo", async (req, res) => {
-    const pilotEmail = "pilot@evalix.ai";
-    const facultyRef = fdb.collection("faculty").doc(pilotEmail);
-    const doc = await facultyRef.get();
-    
-    let faculty: Faculty;
-    if (!doc.exists) {
-      faculty = { 
-        id: pilotEmail, 
-        uid: "demo-uid", 
-        email: pilotEmail, 
-        name: "Faculty Pilot", 
-        photo: "https://api.dicebear.com/7.x/avataaars/svg?seed=pilot" 
-      };
-      await facultyRef.set(faculty);
-    } else {
-      faculty = { id: doc.id, ...(doc.data() as any) };
+  // Support for Simple Name-based Login
+  app.post("/api/auth/simple", async (req, res) => {
+    const { name } = req.body;
+    if (!name || name.trim().length < 2) {
+      return res.status(400).json({ error: "Please enter a valid faculty name (min 2 characters)" });
     }
-    
-    const token = jwt.sign({ id: faculty?.id, email: faculty?.email, name: faculty?.name, photo: faculty?.photo }, JWT_SECRET);
-    res.json({ token, user: faculty });
-  });
 
-  // Support for Firebase ID Token Verification (used by AuthScreen.tsx)
-  app.post("/api/auth/google", async (req, res) => {
-    const { idToken } = req.body;
+    const trimmedName = name.trim();
+    // Deterministic UID based on name for persistence across sessions
+    const uid = `faculty_${trimmedName.toLowerCase().replace(/\s+/g, '_')}`;
+    const email = `${trimmedName.toLowerCase().replace(/\s+/g, '.')}@evalix.faculty`;
+
     try {
-      const decodedToken = await admin.auth().verifyIdToken(idToken);
-      const { uid, email, name, picture } = decodedToken;
-
-      const facultyRef = fdb.collection("faculty").doc(uid);
-      const doc = await facultyRef.get();
+      // Attempt robust database fetch
+      let snap: any;
+      let ref: any;
+      try {
+        const robust = await getFacultyDocRobust(uid);
+        snap = robust.doc;
+        ref = robust.ref;
+      } catch (dbErr) {
+        console.warn("Database unavailable, proceeding with virtual session mode.");
+        // Fallthrough to virtual user creation
+      }
       
       let faculty: Faculty;
-      if (!doc.exists) {
-        faculty = { id: uid, uid, email, name, photo: picture || "" };
-        await facultyRef.set(faculty);
+      if (!snap || !snap.exists) {
+        faculty = { 
+          id: uid, 
+          uid, 
+          email, 
+          name: trimmedName, 
+          photo: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(trimmedName)}` 
+        };
+        // Try to persist if possible, but don't block if it fails
+        if (ref) {
+          ref.set(faculty).catch((e: any) => console.error("Persistence failed:", e.message));
+        }
       } else {
-        faculty = { id: doc.id, ...(doc.data() as any) };
+        faculty = { id: snap.id, ...(snap.data() as any) } as Faculty;
       }
 
-      const token = jwt.sign({ id: faculty?.id, email: faculty?.email, name: faculty?.name, photo: faculty?.photo }, JWT_SECRET);
+      const token = jwt.sign({ id: faculty.id, email: faculty.email, name: faculty.name, photo: faculty.photo }, JWT_SECRET);
       res.json({ token, user: faculty });
-    } catch (error) {
-      console.error("Firebase ID Token verification failed:", error);
-      res.status(401).json({ error: "Invalid identity token" });
+    } catch (error: any) {
+      console.error("Critical login error:", error);
+      // Final emergency fallback: Always allow entry if we have a name
+      const emergencyFaculty = {
+        id: uid,
+        uid,
+        email,
+        name: trimmedName,
+        photo: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(trimmedName)}`
+      };
+      const token = jwt.sign(emergencyFaculty, JWT_SECRET);
+      res.json({ token, user: emergencyFaculty, warning: "Database unreachable" });
     }
   });
 
@@ -170,10 +225,11 @@ async function startServer() {
 
   app.put("/api/faculty/profile", authenticate, async (req: any, res) => {
     const { name } = req.body;
-    await fdb.collection("faculty").doc(req.user.id).update({ name });
+    const facultyRef = getFdb().collection("faculty").doc(req.user.id);
+    await facultyRef.update({ name });
     
     // Return a new token with updated name
-    const updatedDoc = await fdb.collection("faculty").doc(req.user.id).get();
+    const updatedDoc = await facultyRef.get();
     const updated = updatedDoc.data() as Faculty;
     const token = jwt.sign({ id: updated?.id, email: updated?.email, name: updated?.name, photo: updated?.photo }, JWT_SECRET);
     res.json({ token, user: updated });
@@ -181,7 +237,7 @@ async function startServer() {
 
   // Dashboard Stats
   app.get("/api/dashboard/stats", authenticate, async (req: any, res) => {
-    const classesSnap = await fdb.collection("faculty").doc(req.user.id).collection("classes").get();
+    const classesSnap = await getFdb().collection("faculty").doc(req.user.id).collection("classes").get();
     const totalClasses = classesSnap.size;
     
     // Subjects are nested in classes
@@ -192,12 +248,12 @@ async function startServer() {
       totalSubjects += subjectsSnap.size;
     }
 
-    const evaluationsSnap = await fdb.collection("faculty").doc(req.user.id).collection("evaluations")
+    const evaluationsSnap = await getFdb().collection("faculty").doc(req.user.id).collection("evaluations")
       .where("created_at", ">=", new Date(new Date().setHours(0,0,0,0)).toISOString())
       .get();
     const evaluationsToday = evaluationsSnap.size;
 
-    const allEvalsSnap = await fdb.collection("faculty").doc(req.user.id).collection("evaluations").get();
+    const allEvalsSnap = await getFdb().collection("faculty").doc(req.user.id).collection("evaluations").get();
     let totalPerformance = 0;
     allEvalsSnap.forEach(doc => {
       const data = doc.data();
@@ -217,20 +273,20 @@ async function startServer() {
 
   // Classes & Subjects Management
   app.get("/api/classes", authenticate, async (req: any, res) => {
-    const snap = await fdb.collection("faculty").doc(req.user.id).collection("classes").get();
+    const snap = await getFdb().collection("faculty").doc(req.user.id).collection("classes").get();
     res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   });
 
   app.post("/api/classes", authenticate, async (req: any, res) => {
     const { name, semester, year, section } = req.body;
-    const docRef = await fdb.collection("faculty").doc(req.user.id).collection("classes").add({
+    const docRef = await getFdb().collection("faculty").doc(req.user.id).collection("classes").add({
       name, semester, year, section, faculty_id: req.user.id
     });
     res.json({ id: docRef.id, name, semester, year, section });
   });
 
   app.get("/api/classes/:id/subjects", authenticate, async (req: any, res) => {
-    const snap = await fdb.collection("faculty").doc(req.user.id).collection("subjects")
+    const snap = await getFdb().collection("faculty").doc(req.user.id).collection("subjects")
       .where("class_id", "==", req.params.id)
       .get();
     res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -238,7 +294,7 @@ async function startServer() {
 
   app.post("/api/classes/:id/subjects", authenticate, async (req: any, res) => {
     const { name } = req.body;
-    const docRef = await fdb.collection("faculty").doc(req.user.id).collection("subjects").add({
+    const docRef = await getFdb().collection("faculty").doc(req.user.id).collection("subjects").add({
       class_id: req.params.id, name
     });
     res.json({ id: docRef.id, name });
@@ -256,12 +312,12 @@ async function startServer() {
     if (files.textbook) updates.textbook_url = files.textbook[0].originalname;
     if (files.notes) updates.notes_url = files.notes[0].originalname;
     
-    await fdb.collection("faculty").doc(facultyId).collection("subjects").doc(subjectId).update(updates);
+    await getFdb().collection("faculty").doc(facultyId).collection("subjects").doc(subjectId).update(updates);
     res.json({ success: true });
   });
 
   app.get("/api/classes/:id/students", authenticate, async (req: any, res) => {
-    const snap = await fdb.collection("faculty").doc(req.user.id).collection("students")
+    const snap = await getFdb().collection("faculty").doc(req.user.id).collection("students")
       .where("class_id", "==", req.params.id)
       .get();
     res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -272,8 +328,8 @@ async function startServer() {
     const facultyId = req.user.id;
     const classId = req.params.id;
 
-    // Check for unique roll_no in class
-    const existing = await fdb.collection("faculty").doc(facultyId).collection("students")
+    const facultyRef = getFdb().collection("faculty").doc(facultyId);
+    const existing = await facultyRef.collection("students")
       .where("class_id", "==", classId)
       .where("roll_no", "==", roll_no)
       .get();
@@ -282,14 +338,14 @@ async function startServer() {
       return res.status(400).json({ error: "Student roll no already exists in this class" });
     }
 
-    const docRef = await fdb.collection("faculty").doc(facultyId).collection("students").add({
+    const docRef = await facultyRef.collection("students").add({
       class_id: classId, roll_no, name
     });
     res.json({ id: docRef.id, roll_no, name });
   });
 
   app.get("/api/subjects/:id/rubrics", authenticate, async (req: any, res) => {
-    const snap = await fdb.collection("faculty").doc(req.user.id).collection("rubrics")
+    const snap = await getFdb().collection("faculty").doc(req.user.id).collection("rubrics")
       .where("subject_id", "==", req.params.id)
       .get();
     res.json(snap.docs.map(d => {
@@ -300,7 +356,7 @@ async function startServer() {
 
   app.post("/api/subjects/:id/rubrics", authenticate, async (req: any, res) => {
     const { name, type, criteria } = req.body;
-    const docRef = await fdb.collection("faculty").doc(req.user.id).collection("rubrics").add({
+    const docRef = await getFdb().collection("faculty").doc(req.user.id).collection("rubrics").add({
       subject_id: req.params.id,
       name,
       type: type || 'unit',
@@ -311,7 +367,7 @@ async function startServer() {
   });
 
   app.delete("/api/rubrics/:id", authenticate, async (req: any, res) => {
-    await fdb.collection("faculty").doc(req.user.id).collection("rubrics").doc(req.params.id).delete();
+    await getFdb().collection("faculty").doc(req.user.id).collection("rubrics").doc(req.params.id).delete();
     res.json({ success: true });
   });
 
@@ -326,9 +382,9 @@ async function startServer() {
 
     if (!files.questionPaper || !files.answerSheet) return res.status(400).json({ error: "Missing files" });
 
-    // Verify ownership indirectly by querying Firestore (rules will also enforce this)
-    const subjectDoc = await fdb.collection("faculty").doc(facultyId).collection("subjects").doc(subjectId).get();
-    const studentDoc = await fdb.collection("faculty").doc(facultyId).collection("students").doc(studentId).get();
+    const facultyRefBase = getFdb().collection("faculty").doc(facultyId);
+    const subjectDoc = await facultyRefBase.collection("subjects").doc(subjectId).get();
+    const studentDoc = await facultyRefBase.collection("students").doc(studentId).get();
     
     if (!subjectDoc.exists || !studentDoc.exists) return res.status(403).json({ error: "Access denied" });
 
@@ -406,7 +462,7 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
       const jsonStr = text.replace(/```json\n?|\n?```/g, '').trim();
       const parsedResult = JSON.parse(jsonStr);
       
-      const evalRef = await fdb.collection("faculty").doc(facultyId).collection("evaluations").add({
+      const evalRef = await getFdb().collection("faculty").doc(facultyId).collection("evaluations").add({
         student_id: studentId,
         subject_id: subjectId,
         total_marks: parsedResult.total || 100,
@@ -427,15 +483,16 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
     const facultyId = req.user.id;
     const subjectId = req.params.subjectId;
 
-    const subjectDoc = await fdb.collection("faculty").doc(facultyId).collection("subjects").doc(subjectId).get();
+    const facultyRefBase = getFdb().collection("faculty").doc(facultyId);
+    const subjectDoc = await facultyRefBase.collection("subjects").doc(subjectId).get();
     if (!subjectDoc.exists) return res.status(403).json({ error: "Access denied" });
     const classId = subjectDoc.data()?.class_id;
 
-    const studentsSnap = await fdb.collection("faculty").doc(facultyId).collection("students")
+    const studentsSnap = await facultyRefBase.collection("students")
       .where("class_id", "==", classId)
       .get();
     
-    const evalsSnap = await fdb.collection("faculty").doc(facultyId).collection("evaluations")
+    const evalsSnap = await facultyRefBase.collection("evaluations")
       .where("subject_id", "==", subjectId)
       .get();
     
@@ -464,12 +521,12 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
 
   app.delete("/api/evaluations/:studentId/:subjectId", authenticate, async (req: any, res) => {
     const facultyId = req.user.id;
-    const snap = await fdb.collection("faculty").doc(facultyId).collection("evaluations")
+    const snap = await getFdb().collection("faculty").doc(facultyId).collection("evaluations")
       .where("student_id", "==", req.params.studentId)
       .where("subject_id", "==", req.params.subjectId)
       .get();
     
-    const batch = fdb.batch();
+    const batch = getFdb().batch();
     snap.forEach(doc => batch.delete(doc.ref));
     await batch.commit();
     

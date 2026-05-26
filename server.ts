@@ -34,7 +34,15 @@ if (!admin.apps.length) {
     // Continue for now, but API calls will fail later
   }
 }
-const fdb = admin.firestore();
+const fdb = process.env.FIRESTORE_DATABASE_ID ? admin.firestore(process.env.FIRESTORE_DATABASE_ID) : admin.firestore();
+
+interface Faculty {
+  id: string;
+  uid: string;
+  email: string;
+  name: string;
+  photo: string;
+}
 
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key");
 
@@ -113,7 +121,7 @@ async function startServer() {
     const facultyRef = fdb.collection("faculty").doc(pilotEmail);
     const doc = await facultyRef.get();
     
-    let faculty;
+    let faculty: Faculty;
     if (!doc.exists) {
       faculty = { 
         id: pilotEmail, 
@@ -124,7 +132,7 @@ async function startServer() {
       };
       await facultyRef.set(faculty);
     } else {
-      faculty = { id: doc.id, ...doc.data() };
+      faculty = { id: doc.id, ...(doc.data() as any) };
     }
     
     const token = jwt.sign({ id: faculty?.id, email: faculty?.email, name: faculty?.name, photo: faculty?.photo }, JWT_SECRET);
@@ -141,12 +149,12 @@ async function startServer() {
       const facultyRef = fdb.collection("faculty").doc(uid);
       const doc = await facultyRef.get();
       
-      let faculty;
+      let faculty: Faculty;
       if (!doc.exists) {
-        faculty = { id: uid, uid, email, name, photo: picture };
+        faculty = { id: uid, uid, email, name, photo: picture || "" };
         await facultyRef.set(faculty);
       } else {
-        faculty = { id: doc.id, ...doc.data() };
+        faculty = { id: doc.id, ...(doc.data() as any) };
       }
 
       const token = jwt.sign({ id: faculty?.id, email: faculty?.email, name: faculty?.name, photo: faculty?.photo }, JWT_SECRET);
@@ -166,7 +174,7 @@ async function startServer() {
     
     // Return a new token with updated name
     const updatedDoc = await fdb.collection("faculty").doc(req.user.id).get();
-    const updated = updatedDoc.data();
+    const updated = updatedDoc.data() as Faculty;
     const token = jwt.sign({ id: updated?.id, email: updated?.email, name: updated?.name, photo: updated?.photo }, JWT_SECRET);
     res.json({ token, user: updated });
   });

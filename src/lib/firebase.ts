@@ -3,31 +3,19 @@ import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 // Fallback for local development, priority for environment variables in production (Vercel)
+const configs = import.meta.glob('../../firebase-applet-config.json', { eager: true });
+const localConfig = (Object.values(configs)[0] as any)?.default || {};
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || localConfig.apiKey || "placeholder",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || localConfig.authDomain || "placeholder",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || localConfig.projectId || "placeholder",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || localConfig.storageBucket || "placeholder",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || localConfig.messagingSenderId || "placeholder",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || localConfig.appId || "placeholder",
 };
 
-// Simple check: if apiKey is missing, we aren't configured via env
-const isEnvConfigured = !!firebaseConfig.apiKey;
-
-// Since we cannot use top-level await easily in all targets, 
-// we will initialize with either env or a placeholder that we expect to be overwritten
-// in local dev by the dev server injection or a manual step.
-// For AI Studio specifically, we can try to use the config file if it exists.
-
-const app = initializeApp(isEnvConfigured ? firebaseConfig : {
-  apiKey: "placeholder",
-  authDomain: "placeholder",
-  projectId: "placeholder",
-  storageBucket: "placeholder",
-  messagingSenderId: "placeholder",
-  appId: "placeholder"
-});
+const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();

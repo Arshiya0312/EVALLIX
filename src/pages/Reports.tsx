@@ -40,6 +40,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import html2canvas from 'html2canvas';
 
 export default function Marksheets() {
@@ -64,7 +65,8 @@ export default function Marksheets() {
   const handleClassChange = async (val: string) => {
     setSelectedClass(val);
     const res = await fetch(`/api/classes/${val}/subjects`, { headers: { 'Authorization': `Bearer ${token}` } });
-    setSubjects(await res.json());
+    const subjectsData = await res.json();
+    setSubjects(Array.isArray(subjectsData) ? subjectsData : []);
     setSelectedSubject('');
     setData([]);
   };
@@ -74,7 +76,8 @@ export default function Marksheets() {
     setLoading(true);
     try {
       const res = await fetch(`/api/marksheets/${subId}`, { headers: { 'Authorization': `Bearer ${token}` } });
-      setData(await res.json());
+      const markData = await res.json();
+      setData(Array.isArray(markData) ? markData : []);
     } finally {
       setLoading(false);
     }
@@ -84,6 +87,46 @@ export default function Marksheets() {
     stu.name?.toLowerCase().includes(search.toLowerCase()) || 
     stu.roll_no?.toLowerCase().includes(search.toLowerCase())
   );
+
+  const exportTableToPDF = () => {
+    if (data.length === 0) return;
+    
+    const doc = new jsPDF();
+    const className = classes.find(c => c.id.toString() === selectedClass)?.name || '';
+    const subjectName = subjects.find(s => s.id.toString() === selectedSubject)?.name || '';
+
+    // Add Logo or Header
+    doc.setFontSize(20);
+    doc.setTextColor(230, 57, 57); // #E63939
+    doc.text('Academic Marksheet Report', 14, 22);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Class: ${className} | Subject: ${subjectName}`, 14, 30);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 35);
+    
+    const tableData = filteredData.map(stu => [
+      stu.roll_no,
+      stu.name,
+      stu.obtained_marks ?? '--',
+      stu.total_marks ?? '--',
+      stu.obtained_marks !== null ? `${Math.round((stu.obtained_marks / stu.total_marks) * 100)}%` : '--',
+      stu.created_at ? new Date(stu.created_at).toLocaleDateString() : 'N/A'
+    ]);
+
+    autoTable(doc, {
+      startY: 45,
+      head: [['Roll No', 'Student Name', 'Marks', 'Total', 'Percentage', 'Date']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [230, 57, 57], textColor: [255, 255, 255] },
+      styles: { fontSize: 9, cellPadding: 4 },
+      alternateRowStyles: { fillColor: [255, 245, 245] }
+    });
+
+    doc.save(`Marksheet_${className}_${subjectName}.pdf`);
+    toast.success("Marksheet PDF exported successfully");
+  };
 
   const downloadReportPDF = async () => {
     const element = document.getElementById('report-content-dialog');
@@ -194,7 +237,12 @@ export default function Marksheets() {
                <FileSpreadsheet size={18} /> Export Excel
              </Button>
            )}
-           <Button variant="outline" className="h-16 w-16 rounded-[1.5rem] p-0 border-red-100 bg-red-50 text-[#E63939] hover:bg-[#E63939] hover:text-white transition-all shadow-lg shadow-red-500/5">
+           <Button 
+             variant="outline" 
+             onClick={exportTableToPDF}
+             disabled={filteredData.length === 0}
+             className="h-16 w-16 rounded-[1.5rem] p-0 border-red-100 bg-red-50 text-[#E63939] hover:bg-[#E63939] hover:text-white transition-all shadow-lg shadow-red-500/5 disabled:opacity-50"
+           >
               <Printer size={20} />
            </Button>
         </div>

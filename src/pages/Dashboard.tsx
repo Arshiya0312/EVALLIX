@@ -97,6 +97,12 @@ export default function Dashboard() {
         </div>
         
         <div className="flex gap-4">
+          <Button asChild variant="outline" className="h-14 px-8 rounded-2xl border-primary/20 hover:bg-primary/5 text-primary font-bold gap-3">
+            <Link to="/reports">
+              <TrendingUp size={20} />
+              View Reports
+            </Link>
+          </Button>
           <Button asChild className="h-14 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 font-bold gap-3 btn-pulse">
             <Link to="/evaluate">
               <Plus size={20} />

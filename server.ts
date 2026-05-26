@@ -1,21 +1,40 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
+// Remove top-level Vite import to prevent production crashes in serverless envs
+// import { createServer as createViteServer } from "vite";
 import { GoogleGenerativeAI, SchemaType as Type } from "@google/generative-ai";
 import jwt from "jsonwebtoken";
 import multer from "multer";
 import fs from 'fs';
-import sqlite3 from 'sqlite3';
-import { open } from 'sqlite';
+import admin from "firebase-admin";
 import { OAuth2Client } from 'google-auth-library';
 import * as XLSX from 'xlsx';
 
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "evalix-pro-secret-2026";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
-const oauthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET) : null;
+// Firebase Admin Initialization
+if (!admin.apps.length) {
+  try {
+    const saVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+    if (saVar) {
+      const serviceAccount = JSON.parse(saVar.trim());
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log("Firebase Admin initialized via Service Account variable.");
+    } else {
+      // Fallback to default if running in a Google environment with ADC
+      admin.initializeApp();
+      console.log("Firebase Admin initialized via application default credentials.");
+    }
+  } catch (err) {
+    console.error("CRITICAL: Failed to initialize Firebase Admin:", err);
+    // Continue for now, but API calls will fail later
+  }
+}
+const fdb = admin.firestore();
 
 const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "dummy_key");
 
@@ -48,100 +67,9 @@ JSON only.
 }
 `;
 
-let db: any;
-
+// Removed SQLite setupDb
 async function setupDb() {
-  db = await open({
-    filename: './database.sqlite',
-    driver: sqlite3.Database
-  });
-
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS faculty (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      google_id TEXT UNIQUE,
-      email TEXT UNIQUE,
-      name TEXT,
-      photo TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS classes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT,
-      semester TEXT,
-      year TEXT,
-      section TEXT,
-      faculty_id INTEGER,
-      FOREIGN KEY(faculty_id) REFERENCES faculty(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS subjects (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      class_id INTEGER,
-      name TEXT,
-      textbook_url TEXT,
-      notes_url TEXT,
-      FOREIGN KEY(class_id) REFERENCES classes(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS students (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      class_id INTEGER,
-      roll_no TEXT,
-      name TEXT,
-      FOREIGN KEY(class_id) REFERENCES classes(id),
-      UNIQUE(class_id, roll_no)
-    );
-
-    CREATE TABLE IF NOT EXISTS evaluations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER,
-      subject_id INTEGER,
-      question_paper_url TEXT,
-      answer_sheet_url TEXT,
-      total_marks INTEGER,
-      obtained_marks INTEGER,
-      result_json TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY(student_id) REFERENCES students(id),
-      FOREIGN KEY(subject_id) REFERENCES subjects(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS rubrics (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      subject_id INTEGER,
-      name TEXT,
-      type TEXT DEFAULT 'unit',
-      criteria_json TEXT,
-      faculty_id INTEGER,
-      FOREIGN KEY(subject_id) REFERENCES subjects(id),
-      FOREIGN KEY(faculty_id) REFERENCES faculty(id)
-    );
-  `);
-
-  // Migration: Ensure type exists in rubrics
-  const rubricsColumns = await db.all("PRAGMA table_info(rubrics)");
-  if (!rubricsColumns.some((c: any) => c.name === 'type')) {
-    await db.exec("ALTER TABLE rubrics ADD COLUMN type TEXT DEFAULT 'unit'");
-  }
-  if (!rubricsColumns.some((c: any) => c.name === 'name')) {
-    await db.exec("ALTER TABLE rubrics ADD COLUMN name TEXT");
-    if (rubricsColumns.some((c: any) => c.name === 'unit_name')) {
-      await db.exec("UPDATE rubrics SET name = unit_name WHERE unit_name IS NOT NULL");
-    }
-  }
-
-  // Migration: Ensure class_id exists in students if the table was created with an old schema
-  const studentsColumns = await db.all("PRAGMA table_info(students)");
-  if (!studentsColumns.some((c: any) => c.name === 'class_id')) {
-    await db.exec("ALTER TABLE students ADD COLUMN class_id INTEGER");
-  }
-
-  // Migration: Ensure class_id exists in subjects if the table was created with an old schema
-  const subjectsColumns = await db.all("PRAGMA table_info(subjects)");
-  if (!subjectsColumns.some((c: any) => c.name === 'class_id')) {
-    await db.exec("ALTER TABLE subjects ADD COLUMN class_id INTEGER");
-  }
+  console.log("Using Firestore as primary data engine.");
 }
 
 const storage = multer.memoryStorage();
@@ -181,84 +109,51 @@ async function startServer() {
   };
 
   app.post("/api/auth/demo", async (req, res) => {
-    let faculty = await db.get("SELECT * FROM faculty WHERE email = ?", "pilot@evalix.ai");
-    if (!faculty) {
-      const result = await db.run(
-        "INSERT INTO faculty (google_id, email, name, photo) VALUES (?, ?, ?, ?)",
-        "demo-google-id", "pilot@evalix.ai", "Faculty Pilot", "https://api.dicebear.com/7.x/avataaars/svg?seed=pilot"
-      );
-      faculty = { id: result.lastID, email: "pilot@evalix.ai", name: "Faculty Pilot", photo: "https://api.dicebear.com/7.x/avataaars/svg?seed=pilot" };
+    const pilotEmail = "pilot@evalix.ai";
+    const facultyRef = fdb.collection("faculty").doc(pilotEmail);
+    const doc = await facultyRef.get();
+    
+    let faculty;
+    if (!doc.exists) {
+      faculty = { 
+        id: pilotEmail, 
+        uid: "demo-uid", 
+        email: pilotEmail, 
+        name: "Faculty Pilot", 
+        photo: "https://api.dicebear.com/7.x/avataaars/svg?seed=pilot" 
+      };
+      await facultyRef.set(faculty);
+    } else {
+      faculty = { id: doc.id, ...doc.data() };
     }
-    const token = jwt.sign({ id: faculty.id, email: faculty.email, name: faculty.name, photo: faculty.photo }, JWT_SECRET);
+    
+    const token = jwt.sign({ id: faculty?.id, email: faculty?.email, name: faculty?.name, photo: faculty?.photo }, JWT_SECRET);
     res.json({ token, user: faculty });
   });
 
-  const getBaseUrl = (req: any) => {
-    const host = req.headers['x-forwarded-host'] || req.get('host') || '';
-    const protocol = host.includes('run.app') || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-    return `${protocol}://${host}`;
-  };
-
-  // Google OAuth Routes
-  app.get('/api/auth/google/url', (req, res) => {
-    if (!oauthClient) {
-      return res.status(503).json({ error: "Google OAuth is not configured. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET to Secrets." });
-    }
-    const client = oauthClient;
-    const redirectUri = `${getBaseUrl(req)}/auth/google/callback`;
-    const url = client.generateAuthUrl({
-      access_type: 'offline',
-      scope: ['https://www.googleapis.com/auth/userinfo.profile', 'https://www.googleapis.com/auth/userinfo.email'],
-      redirect_uri: redirectUri
-    });
-    res.json({ url });
-  });
-
-  app.get(['/auth/google/callback', '/auth/google/callback/'], async (req, res) => {
-    const { code } = req.query;
-    if (!oauthClient) {
-      return res.status(503).json({ error: "Google OAuth is not configured." });
-    }
-    const client = oauthClient;
-    const redirectUri = `${getBaseUrl(req)}/auth/google/callback`;
+  // Support for Firebase ID Token Verification (used by AuthScreen.tsx)
+  app.post("/api/auth/google", async (req, res) => {
+    const { idToken } = req.body;
     try {
-      const { tokens } = await client.getToken({
-        code: code as string,
-        redirect_uri: redirectUri
-      });
-      const ticket = await client.verifyIdToken({
-        idToken: tokens.id_token!,
-        audience: GOOGLE_CLIENT_ID
-      });
-      const payload = ticket.getPayload();
-      
-      if (!payload) throw new Error('No payload');
+      const decodedToken = await admin.auth().verifyIdToken(idToken);
+      const { uid, email, name, picture } = decodedToken;
 
-      // Sync faculty with DB
-      let faculty = await db.get("SELECT * FROM faculty WHERE google_id = ?", payload.sub);
-      if (!faculty) {
-        const result = await db.run(
-          "INSERT INTO faculty (google_id, email, name, photo) VALUES (?, ?, ?, ?)",
-          payload.sub, payload.email, payload.name, payload.picture
-        );
-        faculty = { id: result.lastID, ...payload };
+      const facultyRef = fdb.collection("faculty").doc(uid);
+      const doc = await facultyRef.get();
+      
+      let faculty;
+      if (!doc.exists) {
+        faculty = { id: uid, uid, email, name, photo: picture };
+        await facultyRef.set(faculty);
+      } else {
+        faculty = { id: doc.id, ...doc.data() };
       }
 
-      const token = jwt.sign({ id: faculty.id, email: faculty.email, name: faculty.name, photo: faculty.photo }, JWT_SECRET);
-
-      res.send(`
-        <html>
-          <body>
-            <script>
-              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', token: '${token}', user: ${JSON.stringify(faculty)} }, '*');
-              window.close();
-            </script>
-          </body>
-        </html>
-      `);
-    } catch (err) {
-      console.error(err);
-      res.status(500).send("Auth failed");
+      const token = jwt.sign({ id: faculty?.id, email: faculty?.email, name: faculty?.name, photo: faculty?.photo }, JWT_SECRET);
+      res.json({ token, user: faculty });
+    } catch (error) {
+      console.error("Firebase ID Token verification failed:", error);
+      res.status(401).json({ error: "Invalid identity token" });
     }
   });
 
@@ -267,128 +162,148 @@ async function startServer() {
 
   app.put("/api/faculty/profile", authenticate, async (req: any, res) => {
     const { name } = req.body;
-    await db.run("UPDATE faculty SET name = ? WHERE id = ?", name, req.user.id);
+    await fdb.collection("faculty").doc(req.user.id).update({ name });
+    
     // Return a new token with updated name
-    const updated = await db.get("SELECT * FROM faculty WHERE id = ?", req.user.id);
-    const token = jwt.sign({ id: updated.id, email: updated.email, name: updated.name, photo: updated.photo }, JWT_SECRET);
+    const updatedDoc = await fdb.collection("faculty").doc(req.user.id).get();
+    const updated = updatedDoc.data();
+    const token = jwt.sign({ id: updated?.id, email: updated?.email, name: updated?.name, photo: updated?.photo }, JWT_SECRET);
     res.json({ token, user: updated });
   });
 
   // Dashboard Stats
   app.get("/api/dashboard/stats", authenticate, async (req: any, res) => {
-    const totalClasses = await db.get("SELECT COUNT(*) as count FROM classes WHERE faculty_id = ?", req.user.id);
-    const totalSubjects = await db.get("SELECT COUNT(*) as count FROM subjects WHERE class_id IN (SELECT id FROM classes WHERE faculty_id = ?)", req.user.id);
-    const evaluationsToday = await db.get("SELECT COUNT(*) as count FROM evaluations WHERE created_at >= date('now') AND subject_id IN (SELECT id FROM subjects WHERE class_id IN (SELECT id FROM classes WHERE faculty_id = ?))", req.user.id);
-    const avgPerformance = await db.get("SELECT AVG(CAST(obtained_marks AS FLOAT) / total_marks) * 100 as avg FROM evaluations WHERE subject_id IN (SELECT id FROM subjects WHERE class_id IN (SELECT id FROM classes WHERE faculty_id = ?))", req.user.id);
+    const classesSnap = await fdb.collection("faculty").doc(req.user.id).collection("classes").get();
+    const totalClasses = classesSnap.size;
+    
+    // Subjects are nested in classes
+    let totalSubjects = 0;
+    const classes = classesSnap.docs;
+    for (const clsDoc of classes) {
+      const subjectsSnap = await clsDoc.ref.collection("subjects").get();
+      totalSubjects += subjectsSnap.size;
+    }
+
+    const evaluationsSnap = await fdb.collection("faculty").doc(req.user.id).collection("evaluations")
+      .where("created_at", ">=", new Date(new Date().setHours(0,0,0,0)).toISOString())
+      .get();
+    const evaluationsToday = evaluationsSnap.size;
+
+    const allEvalsSnap = await fdb.collection("faculty").doc(req.user.id).collection("evaluations").get();
+    let totalPerformance = 0;
+    allEvalsSnap.forEach(doc => {
+      const data = doc.data();
+      if (data.total_marks > 0) {
+        totalPerformance += (data.obtained_marks / data.total_marks);
+      }
+    });
+    const avgPerformance = allEvalsSnap.size > 0 ? (totalPerformance / allEvalsSnap.size) * 100 : 0;
 
     res.json({
-      classes: totalClasses.count,
-      subjects: totalSubjects.count,
-      evaluationsToday: evaluationsToday.count,
-      performance: Math.round(avgPerformance.avg || 0)
+      classes: totalClasses,
+      subjects: totalSubjects,
+      evaluationsToday: evaluationsToday,
+      performance: Math.round(avgPerformance)
     });
   });
 
   // Classes & Subjects Management
   app.get("/api/classes", authenticate, async (req: any, res) => {
-    const classes = await db.all("SELECT * FROM classes WHERE faculty_id = ?", req.user.id);
-    res.json(classes);
+    const snap = await fdb.collection("faculty").doc(req.user.id).collection("classes").get();
+    res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   });
 
   app.post("/api/classes", authenticate, async (req: any, res) => {
     const { name, semester, year, section } = req.body;
-    const result = await db.run("INSERT INTO classes (name, semester, year, section, faculty_id) VALUES (?, ?, ?, ?, ?)",
-      name, semester, year, section, req.user.id);
-    res.json({ id: result.lastID, name, semester, year, section });
+    const docRef = await fdb.collection("faculty").doc(req.user.id).collection("classes").add({
+      name, semester, year, section, faculty_id: req.user.id
+    });
+    res.json({ id: docRef.id, name, semester, year, section });
   });
 
   app.get("/api/classes/:id/subjects", authenticate, async (req: any, res) => {
-    // Verify ownership
-    const cls = await db.get("SELECT * FROM classes WHERE id = ? AND faculty_id = ?", req.params.id, req.user.id);
-    if (!cls) return res.status(403).json({ error: "Access denied" });
-
-    const subjects = await db.all("SELECT * FROM subjects WHERE class_id = ?", req.params.id);
-    res.json(subjects);
+    const snap = await fdb.collection("faculty").doc(req.user.id).collection("subjects")
+      .where("class_id", "==", req.params.id)
+      .get();
+    res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   });
 
   app.post("/api/classes/:id/subjects", authenticate, async (req: any, res) => {
-    // Verify ownership
-    const cls = await db.get("SELECT * FROM classes WHERE id = ? AND faculty_id = ?", req.params.id, req.user.id);
-    if (!cls) return res.status(403).json({ error: "Access denied" });
-
     const { name } = req.body;
-    const result = await db.run("INSERT INTO subjects (class_id, name) VALUES (?, ?)", req.params.id, name);
-    res.json({ id: result.lastID, name });
+    const docRef = await fdb.collection("faculty").doc(req.user.id).collection("subjects").add({
+      class_id: req.params.id, name
+    });
+    res.json({ id: docRef.id, name });
   });
 
   app.post("/api/subjects/:id/materials", authenticate, upload.fields([
     { name: 'textbook', maxCount: 1 },
     { name: 'notes', maxCount: 1 }
   ]), async (req: any, res) => {
-    // Verify ownership
-    const subject = await db.get("SELECT s.* FROM subjects s JOIN classes c ON s.class_id = c.id WHERE s.id = ? AND c.faculty_id = ?", req.params.id, req.user.id);
-    if (!subject) return res.status(403).json({ error: "Access denied" });
-
-    const files = req.files;
-    if (files.textbook) {
-      await db.run("UPDATE subjects SET textbook_url = ? WHERE id = ?", files.textbook[0].originalname, req.params.id);
-    }
-    if (files.notes) {
-      await db.run("UPDATE subjects SET notes_url = ? WHERE id = ?", files.notes[0].originalname, req.params.id);
-    }
+    const facultyId = req.user.id;
+    const subjectId = req.params.id;
+    const files = req.files as any;
+    
+    const updates: any = {};
+    if (files.textbook) updates.textbook_url = files.textbook[0].originalname;
+    if (files.notes) updates.notes_url = files.notes[0].originalname;
+    
+    await fdb.collection("faculty").doc(facultyId).collection("subjects").doc(subjectId).update(updates);
     res.json({ success: true });
   });
 
   app.get("/api/classes/:id/students", authenticate, async (req: any, res) => {
-    // Verify ownership
-    const cls = await db.get("SELECT * FROM classes WHERE id = ? AND faculty_id = ?", req.params.id, req.user.id);
-    if (!cls) return res.status(403).json({ error: "Access denied" });
-
-    const students = await db.all("SELECT * FROM students WHERE class_id = ?", req.params.id);
-    res.json(students);
+    const snap = await fdb.collection("faculty").doc(req.user.id).collection("students")
+      .where("class_id", "==", req.params.id)
+      .get();
+    res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   });
 
   app.post("/api/classes/:id/students", authenticate, async (req: any, res) => {
-    // Verify ownership
-    const cls = await db.get("SELECT * FROM classes WHERE id = ? AND faculty_id = ?", req.params.id, req.user.id);
-    if (!cls) return res.status(403).json({ error: "Access denied" });
-
     const { roll_no, name } = req.body;
-    try {
-      const result = await db.run("INSERT INTO students (class_id, roll_no, name) VALUES (?, ?, ?)", req.params.id, roll_no, name);
-      res.json({ id: result.lastID, roll_no, name });
-    } catch (e) {
-      res.status(400).json({ error: "Student roll no already exists in this class" });
+    const facultyId = req.user.id;
+    const classId = req.params.id;
+
+    // Check for unique roll_no in class
+    const existing = await fdb.collection("faculty").doc(facultyId).collection("students")
+      .where("class_id", "==", classId)
+      .where("roll_no", "==", roll_no)
+      .get();
+    
+    if (!existing.empty) {
+      return res.status(400).json({ error: "Student roll no already exists in this class" });
     }
+
+    const docRef = await fdb.collection("faculty").doc(facultyId).collection("students").add({
+      class_id: classId, roll_no, name
+    });
+    res.json({ id: docRef.id, roll_no, name });
   });
 
   app.get("/api/subjects/:id/rubrics", authenticate, async (req: any, res) => {
-    // Verify subject ownership
-    const subject = await db.get("SELECT s.* FROM subjects s JOIN classes c ON s.class_id = c.id WHERE s.id = ? AND c.faculty_id = ?", req.params.id, req.user.id);
-    if (!subject) return res.status(403).json({ error: "Access denied" });
-
-    const rubrics = await db.all("SELECT * FROM rubrics WHERE subject_id = ? AND faculty_id = ?", req.params.id, req.user.id);
-    res.json(rubrics.map((r: any) => ({ ...r, criteria: JSON.parse(r.criteria_json) })));
+    const snap = await fdb.collection("faculty").doc(req.user.id).collection("rubrics")
+      .where("subject_id", "==", req.params.id)
+      .get();
+    res.json(snap.docs.map(d => {
+      const data = d.data();
+      return { id: d.id, ...data, criteria: data.criteria_json ? JSON.parse(data.criteria_json) : [] };
+    }));
   });
 
   app.post("/api/subjects/:id/rubrics", authenticate, async (req: any, res) => {
-    // Verify subject ownership
-    const subject = await db.get("SELECT s.* FROM subjects s JOIN classes c ON s.class_id = c.id WHERE s.id = ? AND c.faculty_id = ?", req.params.id, req.user.id);
-    if (!subject) return res.status(403).json({ error: "Access denied" });
-
     const { name, type, criteria } = req.body;
-    const result = await db.run(
-      "INSERT INTO rubrics (subject_id, name, type, criteria_json, faculty_id) VALUES (?, ?, ?, ?, ?)",
-      req.params.id, name, type || 'unit', JSON.stringify(criteria), req.user.id
-    );
-    res.json({ id: result.lastID, name, type, criteria });
+    const docRef = await fdb.collection("faculty").doc(req.user.id).collection("rubrics").add({
+      subject_id: req.params.id,
+      name,
+      type: type || 'unit',
+      criteria_json: JSON.stringify(criteria),
+      faculty_id: req.user.id
+    });
+    res.json({ id: docRef.id, name, type, criteria });
   });
 
   app.delete("/api/rubrics/:id", authenticate, async (req: any, res) => {
-    const rubric = await db.get("SELECT * FROM rubrics WHERE id = ? AND faculty_id = ?", req.params.id, req.user.id);
-    if (!rubric) return res.status(403).json({ error: "Access denied" });
-
-    await db.run("DELETE FROM rubrics WHERE id = ?", req.params.id);
+    await fdb.collection("faculty").doc(req.user.id).collection("rubrics").doc(req.params.id).delete();
     res.json({ success: true });
   });
 
@@ -398,15 +313,16 @@ async function startServer() {
     { name: 'answerSheet', maxCount: 1 }
   ]), async (req: any, res) => {
     const { subjectId, studentId, useRubric, rubricContent } = req.body;
-    const files = req.files;
+    const facultyId = req.user.id;
+    const files = req.files as any;
 
     if (!files.questionPaper || !files.answerSheet) return res.status(400).json({ error: "Missing files" });
 
-    // Verify ownership
-    const subject = await db.get("SELECT s.* FROM subjects s JOIN classes c ON s.class_id = c.id WHERE s.id = ? AND c.faculty_id = ?", subjectId, req.user.id);
-    const student = await db.get("SELECT s.* FROM students s JOIN classes c ON s.class_id = c.id WHERE s.id = ? AND c.faculty_id = ?", studentId, req.user.id);
+    // Verify ownership indirectly by querying Firestore (rules will also enforce this)
+    const subjectDoc = await fdb.collection("faculty").doc(facultyId).collection("subjects").doc(subjectId).get();
+    const studentDoc = await fdb.collection("faculty").doc(facultyId).collection("students").doc(studentId).get();
     
-    if (!subject || !student) return res.status(403).json({ error: "Access denied" });
+    if (!subjectDoc.exists || !studentDoc.exists) return res.status(403).json({ error: "Access denied" });
 
     try {
       const qpMime = files.questionPaper[0].mimetype;
@@ -424,7 +340,7 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
 
       const parts = [
         { text: systemPrompt },
-        { text: `CONTEXT: Evaluating for subject "${subject?.name}". ${rubricInstruction}` },
+        { text: `CONTEXT: Evaluating for subject "${subjectDoc.data()?.name}". ${rubricInstruction}` },
         { inlineData: { mimeType: qpMime, data: files.questionPaper[0].buffer.toString('base64') } },
         { inlineData: { mimeType: asMime, data: files.answerSheet[0].buffer.toString('base64') } },
         { text: "Evaluate this answer sheet based on the provided question paper and rubric (if applicable). Provide high fidelity marks. Output in raw JSON format matching the schema." }
@@ -476,63 +392,85 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
       const text = response.text();
 
       if (!text) {
-        console.error("AI Response empty", response);
-        throw new Error("AI failed to produce a response. Please check your inputs.");
+        throw new Error("AI failed to produce a response.");
       }
 
-      console.log("AI Raw Response:", text);
-      let parsedResult;
-      try {
-        // Strip markdown if present
-        const jsonStr = text.replace(/```json\n?|\n?```/g, '').trim();
-        parsedResult = JSON.parse(jsonStr);
-      } catch (e) {
-        console.error("Failed to parse AI response as JSON:", text);
-        throw new Error("AI produced a malformed result. Please retry.");
-      }
+      const jsonStr = text.replace(/```json\n?|\n?```/g, '').trim();
+      const parsedResult = JSON.parse(jsonStr);
       
-      const evalRes = await db.run(
-        "INSERT INTO evaluations (student_id, subject_id, total_marks, obtained_marks, result_json) VALUES (?, ?, ?, ?, ?)",
-        studentId, subjectId, parsedResult.total || 100, parsedResult.score || 0, JSON.stringify(parsedResult)
-      );
-
-      res.json({ id: evalRes.lastID, ...parsedResult });
-    } catch (err: any) {
-      console.error("AI Evaluation Detailed Error:", err);
-      res.status(500).json({ 
-        error: "AI Evaluation failed", 
-        details: err.message,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      const evalRef = await fdb.collection("faculty").doc(facultyId).collection("evaluations").add({
+        student_id: studentId,
+        subject_id: subjectId,
+        total_marks: parsedResult.total || 100,
+        obtained_marks: parsedResult.score || 0,
+        result_json: JSON.stringify(parsedResult),
+        created_at: new Date().toISOString()
       });
+
+      res.json({ id: evalRef.id, ...parsedResult });
+    } catch (err: any) {
+      console.error("AI Evaluation Error:", err);
+      res.status(500).json({ error: "AI Evaluation failed", details: err.message });
     }
   });
 
   // Marksheet Export
   app.get("/api/marksheets/:subjectId", authenticate, async (req: any, res) => {
-    // Verify ownership
-    const subject = await db.get("SELECT s.* FROM subjects s JOIN classes c ON s.class_id = c.id WHERE s.id = ? AND c.faculty_id = ?", req.params.subjectId, req.user.id);
-    if (!subject) return res.status(403).json({ error: "Access denied" });
+    const facultyId = req.user.id;
+    const subjectId = req.params.subjectId;
 
-    const data = await db.all(`
-      SELECT s.id as student_db_id, s.roll_no, s.name, e.obtained_marks, e.total_marks, e.result_json, e.created_at
-      FROM students s
-      LEFT JOIN evaluations e ON s.id = e.student_id AND e.subject_id = ?
-      WHERE s.class_id = (SELECT class_id FROM subjects WHERE id = ?)
-    `, req.params.subjectId, req.params.subjectId);
+    const subjectDoc = await fdb.collection("faculty").doc(facultyId).collection("subjects").doc(subjectId).get();
+    if (!subjectDoc.exists) return res.status(403).json({ error: "Access denied" });
+    const classId = subjectDoc.data()?.class_id;
+
+    const studentsSnap = await fdb.collection("faculty").doc(facultyId).collection("students")
+      .where("class_id", "==", classId)
+      .get();
+    
+    const evalsSnap = await fdb.collection("faculty").doc(facultyId).collection("evaluations")
+      .where("subject_id", "==", subjectId)
+      .get();
+    
+    const evalsMap = new Map();
+    evalsSnap.forEach(doc => {
+      const data = doc.data();
+      evalsMap.set(data.student_id, data);
+    });
+
+    const data = studentsSnap.docs.map(doc => {
+      const student = doc.data();
+      const evaluation = evalsMap.get(doc.id);
+      return {
+        student_db_id: doc.id,
+        roll_no: student.roll_no,
+        name: student.name,
+        obtained_marks: evaluation?.obtained_marks || null,
+        total_marks: evaluation?.total_marks || null,
+        result_json: evaluation?.result_json || null,
+        created_at: evaluation?.created_at || null
+      };
+    });
+
     res.json(data);
   });
 
   app.delete("/api/evaluations/:studentId/:subjectId", authenticate, async (req: any, res) => {
-    // Verify ownership
-    const subject = await db.get("SELECT s.* FROM subjects s JOIN classes c ON s.class_id = c.id WHERE s.id = ? AND c.faculty_id = ?", req.params.subjectId, req.user.id);
-    if (!subject) return res.status(403).json({ error: "Access denied" });
-
-    await db.run("DELETE FROM evaluations WHERE student_id = ? AND subject_id = ?", req.params.studentId, req.params.subjectId);
+    const facultyId = req.user.id;
+    const snap = await fdb.collection("faculty").doc(facultyId).collection("evaluations")
+      .where("student_id", "==", req.params.studentId)
+      .where("subject_id", "==", req.params.subjectId)
+      .get();
+    
+    const batch = fdb.batch();
+    snap.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    
     res.json({ success: true });
   });
 
   // Vite Middleware
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

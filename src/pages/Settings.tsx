@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { User, Bell, Shield, Palette, Save, Camera, CheckCircle, FileText, Download } from 'lucide-react';
+import { User, Bell, Shield, Palette, Save, Camera, CheckCircle, FileText, Download, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -10,9 +10,11 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
+import { useNavigate } from 'react-router-dom';
 
 export default function Settings() {
-  const { user, token, login } = useAuth();
+  const { user, token, login, logout } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = React.useState('Profile Identity');
   const [profile, setProfile] = React.useState({
     name: user?.name || '',
@@ -67,7 +69,13 @@ export default function Settings() {
     { label: 'Access Control', icon: Shield },
     { label: 'Visual Interface', icon: Palette },
     { label: 'System Compliance', icon: FileText },
+    { label: 'Session Management', icon: LogOut },
   ];
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   const downloadSystemManifest = () => {
     const doc = new jsPDF();
@@ -290,6 +298,42 @@ export default function Settings() {
                           animate={{ x: visuals['Cinematic Transitions'] ? 24 : 4 }}
                           className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm" 
                         />
+                     </div>
+                  </div>
+               </CardContent>
+             </Card>
+           )}
+
+           {activeTab === 'Session Management' && (
+             <Card className="glass-card border-none rounded-[3rem] overflow-hidden border-2 border-red-500/10">
+               <CardHeader className="p-10">
+                 <CardTitle className="text-3xl font-black tracking-tight text-slate-800 dark:text-white italic">Session Management</CardTitle>
+                 <CardDescription className="font-bold text-slate-500 uppercase text-[10px] tracking-widest mt-2">Terminate active neural connection and clear local cache.</CardDescription>
+               </CardHeader>
+               <CardContent className="p-10 space-y-12">
+                  <div className="p-10 rounded-[2rem] bg-red-50 dark:bg-red-950/10 border border-red-100 dark:border-red-900/20 flex flex-col items-center justify-center text-center gap-6">
+                     <div className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-500">
+                        <LogOut size={40} />
+                     </div>
+                     <div>
+                        <h4 className="text-xl font-black text-slate-800 dark:text-white mb-2">Nuclear Session Termination</h4>
+                        <p className="text-sm text-slate-500 font-medium max-w-md mx-auto">This will immediately invalidate your current access token and redirect you to the login portal. Ensure all neural synchronizations are complete.</p>
+                     </div>
+                     <Button 
+                       onClick={handleLogout}
+                       className="h-16 px-12 rounded-2xl bg-red-500 hover:bg-red-600 font-black shadow-xl shadow-red-500/20 gap-3 text-lg"
+                     >
+                       <LogOut size={24} />
+                       Terminate Session
+                     </Button>
+                  </div>
+
+                  <div className="space-y-4">
+                     <Label className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Security Logs</Label>
+                     <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 font-mono text-[10px] text-slate-400 space-y-1">
+                        <p>[{new Date().toISOString()}] - Session Initialized via Google OAuth</p>
+                        <p>[{new Date().toISOString()}] - Metadata Synchronized with Core</p>
+                        <p>[{new Date().toISOString()}] - RSA Token Verified</p>
                      </div>
                   </div>
                </CardContent>

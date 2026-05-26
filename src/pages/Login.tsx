@@ -1,39 +1,35 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import logo from '../assets/images/evalix_red_grad_logo_1779726809684.png';
 import { motion } from 'motion/react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { GraduationCap } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import { signInWithGoogle } from '@/lib/firebase';
 
 export default function Login() {
   const { login } = useAuth();
 
-  useEffect(() => {
-    const handleOAuthMessage = (event: MessageEvent) => {
-      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        const { token, user } = event.data;
-        login(token, user);
-      }
-    };
-    window.addEventListener('message', handleOAuthMessage);
-    return () => window.removeEventListener('message', handleOAuthMessage);
-  }, [login]);
-
   const handleGoogleLogin = async () => {
     try {
-      const res = await fetch('/api/auth/google/url');
-      const { url } = await res.json();
+      const user = await signInWithGoogle();
+      const idToken = await user.getIdToken();
+
+      const res = await fetch('/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken })
+      });
       
-      const width = 600;
-      const height = 700;
-      const left = window.innerWidth / 2 - width / 2;
-      const top = window.innerHeight / 2 - height / 2;
-      
-      window.open(url, 'google_login', `width=${width},height=${height},top=${top},left=${left}`);
+      const data = await res.json();
+      if (res.ok) {
+        login(data.token, data.user);
+      } else {
+        toast.error(data.error || "Neural Link Failed: Identity Mismatch");
+      }
     } catch (err) {
-      toast.error("Cloud nodes unreachable. Try again later.");
+      console.error(err);
+      toast.error("Cloud nodes unreachable or authentication interrupted.");
     }
   };
 

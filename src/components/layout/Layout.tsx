@@ -58,7 +58,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </div>
 
-        <nav className="flex-1 flex flex-col gap-2 relative z-10">
+        <nav className="flex-1 flex flex-col gap-2 relative z-10 overflow-y-auto pr-2 custom-scrollbar">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
@@ -80,7 +80,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           ))}
         </nav>
 
-        <div className="flex flex-col gap-6 relative z-10">
+        <div className="mt-auto flex flex-col gap-6 relative z-10 pt-4 border-t border-primary/5">
           <div className="flex items-center justify-between px-2">
             <Button variant="ghost" size="icon" onClick={toggleTheme} className="rounded-xl w-12 h-12 hover:bg-primary/10 hover:text-primary">
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
@@ -110,10 +110,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           <Button 
             variant="ghost" 
             onClick={logout}
-            className="w-full justify-start gap-3 rounded-2xl text-primary hover:text-primary/80 hover:bg-primary/10 px-4 h-12"
+            className="w-full justify-start gap-3 rounded-2xl text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 px-4 h-12 border border-transparent hover:border-red-100 dark:hover:border-red-900/30 transition-all shadow-sm"
           >
             <LogOut size={18} />
-            <span className="font-semibold text-sm">Sign Out</span>
+            <span className="font-bold text-sm">Sign Out</span>
           </Button>
         </div>
       </motion.aside>
@@ -133,10 +133,21 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                    <p className="text-sm font-extrabold italic">Evalix — Intelligence in Every Evaluation</p>
                 </div>
              </div>
-             <div className="flex gap-4">
+             <div className="flex gap-4 items-center">
+                <Button 
+                   variant="outline" 
+                   size="sm" 
+                   onClick={logout}
+                   className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 gap-2 h-9 px-4 rounded-xl border border-red-100 dark:border-red-900/30 transition-all"
+                >
+                   <LogOut size={14} />
+                   Sign Out
+                </Button>
                 {/* Visual accents */}
-                <div className="h-1 w-12 bg-primary rounded-full opacity-20" />
-                <div className="h-1 w-6 bg-primary rounded-full opacity-10" />
+                <div className="hidden md:flex gap-4">
+                   <div className="h-1 w-12 bg-primary rounded-full opacity-20" />
+                   <div className="h-1 w-6 bg-primary rounded-full opacity-10" />
+                </div>
              </div>
           </header>
 

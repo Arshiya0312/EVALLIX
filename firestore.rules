@@ -1,54 +1,51 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default Deny
+    // Default deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Global Helpers
+    // Helpers
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function isOwner(facultyId) {
+      return isSignedIn() && request.auth.uid == facultyId;
     }
 
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Faculty Profiles
+    // Faculty Profile
     match /faculty/{facultyId} {
-      allow get: if isOwner(facultyId);
-      allow create: if isOwner(facultyId) 
-                    && request.resource.data.keys().hasAll(['uid', 'name', 'email'])
-                    && request.resource.data.uid == request.auth.uid;
-      allow update: if isOwner(facultyId) 
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'facultyId']);
-    }
-
-    // subjects
-    match /subjects/{subjectId} {
-      allow list: if isSignedIn() && resource.data.facultyId == request.auth.uid;
-      allow get: if isSignedIn() && resource.data.facultyId == request.auth.uid;
-      allow create: if isSignedIn() 
-                    && request.resource.data.facultyId == request.auth.uid
-                    && request.resource.data.name is string;
-      allow update: if isSignedIn() 
-                    && resource.data.facultyId == request.auth.uid
-                    && request.resource.data.facultyId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.facultyId == request.auth.uid;
-
-      // Nested Students
-      match /students/{studentRollNo} {
-        allow read, write: if isSignedIn() && get(/databases/$(database)/documents/subjects/$(subjectId)).data.facultyId == request.auth.uid;
+      allow read, write: if isOwner(facultyId);
+      
+      // Classes
+      match /classes/{classId} {
+        allow read, write: if isOwner(facultyId) && isValidId(classId);
       }
 
-      // Nested Evaluations
+      // Subjects
+      match /subjects/{subjectId} {
+        allow read, write: if isOwner(facultyId) && isValidId(subjectId);
+      }
+
+      // Students
+      match /students/{studentId} {
+        allow read, write: if isOwner(facultyId) && isValidId(studentId);
+      }
+
+      // Rubrics
+      match /rubrics/{rubricId} {
+        allow read, write: if isOwner(facultyId) && isValidId(rubricId);
+      }
+
+      // Evaluations
       match /evaluations/{evaluationId} {
-        allow read, write: if isSignedIn() && get(/databases/$(database)/documents/subjects/$(subjectId)).data.facultyId == request.auth.uid;
+        allow read, write: if isOwner(facultyId) && isValidId(evaluationId);
       }
     }
   }

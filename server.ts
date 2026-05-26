@@ -50,7 +50,7 @@ const initFdb = (forceDefault = false) => {
     fdb = (dbId && dbId !== '(default)' && dbId !== 'default') 
       ? admin.firestore(dbId) 
       : admin.firestore();
-    console.log(`Firestore connected to: ${dbId || '(default)'}`);
+    console.log(`Firestore linked to: ${dbId || '(default)'}`);
   } catch (e) {
     console.warn("Failed to connect to specific database, falling back to (default):", e);
     fdb = admin.firestore();
@@ -63,21 +63,35 @@ const getFdb = () => {
   return fdb;
 };
 
-// Global helper for faculty doc with auto-fallback
-async function getFacultyDocRobust(uid: string) {
+/**
+ * Executes a Firestore operation with automatic fallback to the default database
+ * if the primary (named) database is not found or inaccessible.
+ */
+async function dbRun<T>(operation: (db: admin.firestore.Firestore) => Promise<T>): Promise<T> {
+  const current = getFdb();
   try {
-    const doc = await getFdb().collection("faculty").doc(uid).get();
-    return { doc, ref: getFdb().collection("faculty").doc(uid) };
+    return await operation(current);
   } catch (err: any) {
-    // If NOT_FOUND (5) or PERMISSION_DENIED (7), and probably using a named DB
-    const currentDb = (fdb as any)?._databaseId?.database || '(default)';
-    if (currentDb !== '(default)' && (err.code === 5 || err.code === 7)) {
-      console.warn(`Firestore Error ${err.code} on "${currentDb}". Retrying with default DB...`);
-      initFdb(true); // Re-init with default
-      const doc = await getFdb().collection("faculty").doc(uid).get();
-      return { doc, ref: getFdb().collection("faculty").doc(uid) };
+    // If it's a "database not found" (5) or "permission denied" (7) on a non-default DB
+    const dbName = (current as any)?._databaseId?.database || '(default)';
+    if (dbName !== '(default)' && (err.code === 5 || err.code === 7)) {
+      console.warn(`Firestore Error ${err.code} on "${dbName}". Falling back to default DB.`);
+      initFdb(true); // Force switch to default
+      return await operation(getFdb());
     }
     throw err;
+  }
+}
+
+/**
+ * Safe version of dbRun that returns a default value on ANY database failure
+ */
+async function dbSafe<T>(operation: (db: admin.firestore.Firestore) => Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await dbRun(operation);
+  } catch (err) {
+    console.error("Firestore operation failed after fallback efforts:", err);
+    return fallback;
   }
 }
 
@@ -120,9 +134,39 @@ JSON only.
 }
 `;
 
+// Error wrapper for async routes to prevent uncaught exceptions in Express
+const wrap = (fn: any) => (req: any, res: any, next: any) => {
+  Promise.resolve(fn(req, res, next)).catch((err) => {
+    console.error("Route Error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Internal Server Error", details: err.message });
+    }
+  });
+};
+
 // Removed SQLite setupDb
 async function setupDb() {
-  console.log("Using Firestore as primary data engine.");
+  console.log("Validating Firestore engine connectivity...");
+  try {
+    // Attempt a lightweight read to verify the specific database
+    const db = getFdb();
+    await db.collection("_health").limit(1).get();
+    console.log("Primary database connection verified.");
+  } catch (err: any) {
+    const dbName = (fdb as any)?._databaseId?.database || '(default)';
+    if (dbName !== '(default)' && (err.code === 5 || err.code === 7)) {
+      console.warn(`Initial connection to "${dbName}" failed (Error ${err.code}). Falling back to (default).`);
+      initFdb(true);
+      try {
+        await getFdb().collection("_health").limit(1).get();
+        console.log("Default database connection verified.");
+      } catch (fallbackErr) {
+        console.error("CRITICAL: Even the default database is unreachable. Check Firebase permissions.");
+      }
+    } else {
+      console.warn("Firestore connectivity check failed, but proceeding anyway:", err.message);
+    }
+  }
 }
 
 const storage = multer.memoryStorage();
@@ -175,16 +219,14 @@ async function startServer() {
 
     try {
       // Attempt robust database fetch
-      let snap: any;
-      let ref: any;
-      try {
-        const robust = await getFacultyDocRobust(uid);
-        snap = robust.doc;
-        ref = robust.ref;
-      } catch (dbErr) {
-        console.warn("Database unavailable, proceeding with virtual session mode.");
-        // Fallthrough to virtual user creation
-      }
+      const facultyData = await dbSafe(async (db) => {
+        const ref = db.collection("faculty").doc(uid);
+        const snap = await ref.get();
+        return { snap, ref };
+      }, null);
+
+      let snap = facultyData?.snap;
+      let ref = facultyData?.ref;
       
       let faculty: Faculty;
       if (!snap || !snap.exists) {
@@ -195,9 +237,9 @@ async function startServer() {
           name: trimmedName, 
           photo: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(trimmedName)}` 
         };
-        // Try to persist if possible, but don't block if it fails
+        // Try to persist but don't block
         if (ref) {
-          ref.set(faculty).catch((e: any) => console.error("Persistence failed:", e.message));
+          ref.set(faculty).catch((e: any) => console.error("Auto-registration persistence failed:", e.message));
         }
       } else {
         faculty = { id: snap.id, ...(snap.data() as any) } as Faculty;
@@ -221,89 +263,96 @@ async function startServer() {
   });
 
   // App Routes
-  app.get("/api/me", authenticate, (req: any, res) => res.json(req.user));
+  app.get("/api/me", authenticate, wrap((req: any, res: any) => res.json(req.user)));
 
-  app.put("/api/faculty/profile", authenticate, async (req: any, res) => {
-    const { name } = req.body;
+  app.put("/api/faculty/profile", authenticate, wrap(async (req: any, res: any) => {
     const facultyRef = getFdb().collection("faculty").doc(req.user.id);
-    await facultyRef.update({ name });
+    await facultyRef.update({ name: req.body.name });
     
     // Return a new token with updated name
     const updatedDoc = await facultyRef.get();
     const updated = updatedDoc.data() as Faculty;
     const token = jwt.sign({ id: updated?.id, email: updated?.email, name: updated?.name, photo: updated?.photo }, JWT_SECRET);
     res.json({ token, user: updated });
-  });
+  }));
 
-  // Dashboard Stats
-  app.get("/api/dashboard/stats", authenticate, async (req: any, res) => {
-    const classesSnap = await getFdb().collection("faculty").doc(req.user.id).collection("classes").get();
-    const totalClasses = classesSnap.size;
-    
-    // Subjects are nested in classes
-    let totalSubjects = 0;
-    const classes = classesSnap.docs;
-    for (const clsDoc of classes) {
-      const subjectsSnap = await clsDoc.ref.collection("subjects").get();
-      totalSubjects += subjectsSnap.size;
+  app.get("/api/dashboard/stats", authenticate, wrap(async (req: any, res: any) => {
+    try {
+      const stats = await dbSafe(async (db) => {
+        const facultyRef = db.collection("faculty").doc(req.user.id);
+        const classesSnap = await facultyRef.collection("classes").get();
+        const totalClasses = classesSnap.size;
+        
+        // Subjects are nested in subjects collection linked by class_id or faculty_id
+        // In our schema they are in faculty/{uid}/subjects
+        const subjectsSnap = await facultyRef.collection("subjects").get();
+        const totalSubjects = subjectsSnap.size;
+
+        const evaluationsTodaySnap = await facultyRef.collection("evaluations")
+          .where("created_at", ">=", new Date(new Date().setHours(0,0,0,0)).toISOString())
+          .get();
+        const evaluationsToday = evaluationsTodaySnap.size;
+
+        const allEvalsSnap = await facultyRef.collection("evaluations").get();
+        let totalPerformance = 0;
+        allEvalsSnap.forEach(doc => {
+          const data = doc.data();
+          if (data.total_marks > 0) {
+            totalPerformance += (data.obtained_marks / data.total_marks);
+          }
+        });
+        const avgPerformance = allEvalsSnap.size > 0 ? (totalPerformance / allEvalsSnap.size) * 100 : 0;
+
+        return {
+          classes: totalClasses,
+          subjects: totalSubjects,
+          evaluationsToday: evaluationsToday,
+          performance: Math.round(avgPerformance)
+        };
+      }, { classes: 0, subjects: 0, evaluationsToday: 0, performance: 0 });
+
+      res.json(stats);
+    } catch (err) {
+      res.json({ classes: 0, subjects: 0, evaluationsToday: 0, performance: 0 });
     }
-
-    const evaluationsSnap = await getFdb().collection("faculty").doc(req.user.id).collection("evaluations")
-      .where("created_at", ">=", new Date(new Date().setHours(0,0,0,0)).toISOString())
-      .get();
-    const evaluationsToday = evaluationsSnap.size;
-
-    const allEvalsSnap = await getFdb().collection("faculty").doc(req.user.id).collection("evaluations").get();
-    let totalPerformance = 0;
-    allEvalsSnap.forEach(doc => {
-      const data = doc.data();
-      if (data.total_marks > 0) {
-        totalPerformance += (data.obtained_marks / data.total_marks);
-      }
-    });
-    const avgPerformance = allEvalsSnap.size > 0 ? (totalPerformance / allEvalsSnap.size) * 100 : 0;
-
-    res.json({
-      classes: totalClasses,
-      subjects: totalSubjects,
-      evaluationsToday: evaluationsToday,
-      performance: Math.round(avgPerformance)
-    });
-  });
+  }));
 
   // Classes & Subjects Management
-  app.get("/api/classes", authenticate, async (req: any, res) => {
-    const snap = await getFdb().collection("faculty").doc(req.user.id).collection("classes").get();
-    res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  });
+  app.get("/api/classes", authenticate, wrap(async (req: any, res: any) => {
+    const classes = await dbSafe(async (db) => {
+      const snap = await db.collection("faculty").doc(req.user.id).collection("classes").get();
+      return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    }, []);
+    res.json(classes);
+  }));
 
-  app.post("/api/classes", authenticate, async (req: any, res) => {
+  app.post("/api/classes", authenticate, wrap(async (req: any, res: any) => {
     const { name, semester, year, section } = req.body;
     const docRef = await getFdb().collection("faculty").doc(req.user.id).collection("classes").add({
       name, semester, year, section, faculty_id: req.user.id
     });
     res.json({ id: docRef.id, name, semester, year, section });
-  });
+  }));
 
-  app.get("/api/classes/:id/subjects", authenticate, async (req: any, res) => {
+  app.get("/api/classes/:id/subjects", authenticate, wrap(async (req: any, res: any) => {
     const snap = await getFdb().collection("faculty").doc(req.user.id).collection("subjects")
       .where("class_id", "==", req.params.id)
       .get();
     res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  });
+  }));
 
-  app.post("/api/classes/:id/subjects", authenticate, async (req: any, res) => {
+  app.post("/api/classes/:id/subjects", authenticate, wrap(async (req: any, res: any) => {
     const { name } = req.body;
     const docRef = await getFdb().collection("faculty").doc(req.user.id).collection("subjects").add({
       class_id: req.params.id, name
     });
     res.json({ id: docRef.id, name });
-  });
+  }));
 
   app.post("/api/subjects/:id/materials", authenticate, upload.fields([
     { name: 'textbook', maxCount: 1 },
     { name: 'notes', maxCount: 1 }
-  ]), async (req: any, res) => {
+  ]), wrap(async (req: any, res: any) => {
     const facultyId = req.user.id;
     const subjectId = req.params.id;
     const files = req.files as any;
@@ -314,16 +363,16 @@ async function startServer() {
     
     await getFdb().collection("faculty").doc(facultyId).collection("subjects").doc(subjectId).update(updates);
     res.json({ success: true });
-  });
+  }));
 
-  app.get("/api/classes/:id/students", authenticate, async (req: any, res) => {
+  app.get("/api/classes/:id/students", authenticate, wrap(async (req: any, res: any) => {
     const snap = await getFdb().collection("faculty").doc(req.user.id).collection("students")
       .where("class_id", "==", req.params.id)
       .get();
     res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  });
+  }));
 
-  app.post("/api/classes/:id/students", authenticate, async (req: any, res) => {
+  app.post("/api/classes/:id/students", authenticate, wrap(async (req: any, res: any) => {
     const { roll_no, name } = req.body;
     const facultyId = req.user.id;
     const classId = req.params.id;
@@ -342,9 +391,9 @@ async function startServer() {
       class_id: classId, roll_no, name
     });
     res.json({ id: docRef.id, roll_no, name });
-  });
+  }));
 
-  app.get("/api/subjects/:id/rubrics", authenticate, async (req: any, res) => {
+  app.get("/api/subjects/:id/rubrics", authenticate, wrap(async (req: any, res: any) => {
     const snap = await getFdb().collection("faculty").doc(req.user.id).collection("rubrics")
       .where("subject_id", "==", req.params.id)
       .get();
@@ -352,9 +401,9 @@ async function startServer() {
       const data = d.data();
       return { id: d.id, ...data, criteria: data.criteria_json ? JSON.parse(data.criteria_json) : [] };
     }));
-  });
+  }));
 
-  app.post("/api/subjects/:id/rubrics", authenticate, async (req: any, res) => {
+  app.post("/api/subjects/:id/rubrics", authenticate, wrap(async (req: any, res: any) => {
     const { name, type, criteria } = req.body;
     const docRef = await getFdb().collection("faculty").doc(req.user.id).collection("rubrics").add({
       subject_id: req.params.id,
@@ -364,18 +413,18 @@ async function startServer() {
       faculty_id: req.user.id
     });
     res.json({ id: docRef.id, name, type, criteria });
-  });
+  }));
 
-  app.delete("/api/rubrics/:id", authenticate, async (req: any, res) => {
+  app.delete("/api/rubrics/:id", authenticate, wrap(async (req: any, res: any) => {
     await getFdb().collection("faculty").doc(req.user.id).collection("rubrics").doc(req.params.id).delete();
     res.json({ success: true });
-  });
+  }));
 
   // Evaluation Core
   app.post("/api/evaluate", authenticate, upload.fields([
     { name: 'questionPaper', maxCount: 1 },
     { name: 'answerSheet', maxCount: 1 }
-  ]), async (req: any, res) => {
+  ]), wrap(async (req: any, res: any) => {
     const { subjectId, studentId, useRubric, rubricContent } = req.body;
     const facultyId = req.user.id;
     const files = req.files as any;
@@ -476,10 +525,10 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
       console.error("AI Evaluation Error:", err);
       res.status(500).json({ error: "AI Evaluation failed", details: err.message });
     }
-  });
+  }));
 
   // Marksheet Export
-  app.get("/api/marksheets/:subjectId", authenticate, async (req: any, res) => {
+  app.get("/api/marksheets/:subjectId", authenticate, wrap(async (req: any, res: any) => {
     const facultyId = req.user.id;
     const subjectId = req.params.subjectId;
 
@@ -517,9 +566,9 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
     });
 
     res.json(data);
-  });
+  }));
 
-  app.delete("/api/evaluations/:studentId/:subjectId", authenticate, async (req: any, res) => {
+  app.delete("/api/evaluations/:studentId/:subjectId", authenticate, wrap(async (req: any, res: any) => {
     const facultyId = req.user.id;
     const snap = await getFdb().collection("faculty").doc(facultyId).collection("evaluations")
       .where("student_id", "==", req.params.studentId)
@@ -531,7 +580,7 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
     await batch.commit();
     
     res.json({ success: true });
-  });
+  }));
 
   // Vite Middleware
   if (process.env.NODE_ENV !== "production") {

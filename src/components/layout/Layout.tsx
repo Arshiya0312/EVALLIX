@@ -14,7 +14,6 @@ import {
   ClipboardList
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/hooks/useAuth';
 import { motion } from 'motion/react';
@@ -102,13 +101,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-3">
-              <Avatar className="h-10 w-10 border-2 border-primary/20">
-                <AvatarImage src={user?.photo} />
-                <AvatarFallback className="bg-primary text-white">{user?.name?.[0]}</AvatarFallback>
-              </Avatar>
               <div className="flex flex-col">
                 <span className="text-sm font-bold truncate max-w-[120px]">{user?.name || 'Faculty'}</span>
-                <span className="text-[10px] text-muted-foreground font-medium">Verified AI Expert</span>
               </div>
             </div>
           </div>

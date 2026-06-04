@@ -10,7 +10,8 @@ import { toast } from 'sonner';
 
 export default function Login() {
   const { login } = useAuth();
-  const [facultyName, setFacultyName] = React.useState('');
+  const [facultyName, setFacultyName] = React.useState(() => localStorage.getItem('last_faculty_name') || '');
+  const [rememberMe, setRememberMe] = React.useState(true);
   const [isLoading, setIsLoading] = React.useState(false);
 
   const handleSimpleLogin = async (e: React.FormEvent) => {
@@ -18,6 +19,12 @@ export default function Login() {
     if (!facultyName.trim()) {
       toast.error("Please enter your name");
       return;
+    }
+
+    if (rememberMe) {
+        localStorage.setItem('last_faculty_name', facultyName.trim());
+    } else {
+        localStorage.removeItem('last_faculty_name');
     }
 
     setIsLoading(true);
@@ -87,6 +94,16 @@ export default function Login() {
                     onChange={(e) => setFacultyName(e.target.value)}
                     className="h-16 rounded-2xl border-2 border-red-100 bg-white/50 focus:border-red-500 transition-all text-lg font-bold"
                   />
+                </div>
+                <div className="flex items-center gap-3 px-2">
+                   <input 
+                     type="checkbox" 
+                     id="remember" 
+                     checked={rememberMe} 
+                     onChange={(e) => setRememberMe(e.target.checked)}
+                     className="w-5 h-5 rounded-md border-red-100 text-[#E63939] focus:ring-[#E63939]"
+                   />
+                   <Label htmlFor="remember" className="text-[10px] font-black uppercase tracking-widest text-slate-500 cursor-pointer">Remember my faculty node</Label>
                 </div>
                 <Button 
                   type="submit"

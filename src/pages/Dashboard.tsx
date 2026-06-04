@@ -67,16 +67,25 @@ const StatCard = ({ icon: Icon, label, value, color, delay }: any) => {
 
 export default function Dashboard() {
   const { user, token } = useAuth();
-  const [stats, setStats] = React.useState({ classes: 0, subjects: 0, evaluationsToday: 0, performance: 0 });
+  const [stats, setStats] = React.useState({ 
+    classes: 0, 
+    subjects: 0, 
+    evaluationsToday: 0, 
+    performance: 0,
+    recentActivity: [] as any[]
+  });
+  const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
     if (!token) return;
+    setLoading(true);
     fetch('/api/dashboard/stats', {
       headers: { 'Authorization': `Bearer ${token}` }
     })
-    .then(res => res.ok ? res.json() : { classes: 0, subjects: 0, evaluationsToday: 0, performance: 0 })
+    .then(res => res.ok ? res.json() : { classes: 0, subjects: 0, evaluationsToday: 0, performance: 0, recentActivity: [] })
     .then(data => setStats(data))
-    .catch(() => {});
+    .catch(() => {})
+    .finally(() => setLoading(false));
   }, [token]);
 
   return (
@@ -130,16 +139,55 @@ export default function Dashboard() {
              <CardContent className="p-6 md:p-10">
                 <div className="flex items-center justify-between mb-8">
                    <h2 className="text-2xl font-black tracking-tight text-slate-800 dark:text-white">Recent Activity</h2>
-                   <Button variant="ghost" className="text-primary font-bold hover:bg-primary/10 gap-2">
-                     View Logs <ChevronRight size={16} />
+                   <Button asChild variant="ghost" className="text-primary font-bold hover:bg-primary/10 gap-2">
+                     <Link to="/reports">
+                        View Records <ChevronRight size={16} />
+                     </Link>
                    </Button>
                 </div>
                 
-                <div className="flex flex-col items-center justify-center h-64 text-center">
-                   <div className="w-16 h-16 bg-primary/5 rounded-full flex items-center justify-center text-primary/30 mb-4 animate-pulse">
-                     <BookCopy size={32} />
-                   </div>
-                   <p className="text-slate-500 font-medium">No evaluations processed in this workcycle yet.</p>
+                <div className="space-y-4">
+                  {stats.recentActivity && stats.recentActivity.length > 0 ? (
+                    stats.recentActivity.map((activity: any, i: number) => (
+                      <motion.div 
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 * i }}
+                        key={activity.id} 
+                        className="flex items-center justify-between p-5 rounded-3xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/10 hover:border-primary/30 transition-all group"
+                      >
+                         <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center shadow-sm text-primary font-black">
+                               {activity.roll_no}
+                            </div>
+                            <div>
+                               <p className="font-black text-slate-800 dark:text-white leading-none mb-1">{activity.student_name}</p>
+                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{activity.subject_name}</p>
+                            </div>
+                         </div>
+                         <div className="flex items-center gap-6">
+                            <div className="text-right">
+                               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Score</p>
+                               <p className="font-black text-slate-800 dark:text-white">{activity.obtained_marks} <span className="text-xs opacity-30">/ {activity.total_marks}</span></p>
+                            </div>
+                            <Button size="icon" variant="ghost" className="rounded-xl text-slate-300 group-hover:text-primary group-hover:bg-primary/5">
+                               <ChevronRight size={20} />
+                            </Button>
+                         </div>
+                      </motion.div>
+                    ))
+                  ) : loading ? (
+                    <div className="flex flex-col items-center justify-center h-64 text-center">
+                       <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-64 text-center">
+                       <div className="w-16 h-16 bg-primary/5 rounded-full flex items-center justify-center text-primary/30 mb-4 animate-pulse">
+                         <BookCopy size={32} />
+                       </div>
+                       <p className="text-slate-500 font-medium">No evaluations processed in this workcycle yet.</p>
+                    </div>
+                  )}
                 </div>
              </CardContent>
           </Card>

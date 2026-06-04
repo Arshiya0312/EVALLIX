@@ -2,10 +2,10 @@
   "entities": {
     "Faculty": {
       "title": "Faculty",
-      "description": "Educational staff member profile",
+      "description": "Faculty user profile",
       "type": "object",
       "properties": {
-        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "uid": { "type": "string" },
         "email": { "type": "string" },
         "name": { "type": "string" },
         "photo": { "type": "string" }
@@ -14,43 +14,58 @@
     },
     "Class": {
       "title": "Class",
-      "description": "A cohort of students",
+      "description": "Academic class node",
       "type": "object",
       "properties": {
+        "faculty_id": { "type": "string" },
         "name": { "type": "string" },
         "semester": { "type": "string" },
         "year": { "type": "string" },
         "section": { "type": "string" },
-        "faculty_id": { "type": "string" }
+        "created_at": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "faculty_id"]
+      "required": ["faculty_id", "name"]
     },
     "Subject": {
       "title": "Subject",
-      "description": "Academic course within a class",
+      "description": "Subject within a class",
       "type": "object",
       "properties": {
         "class_id": { "type": "string" },
         "name": { "type": "string" },
         "textbook_url": { "type": "string" },
-        "notes_url": { "type": "string" }
+        "notes_url": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
       },
       "required": ["class_id", "name"]
     },
     "Student": {
       "title": "Student",
-      "description": "Individual student record",
+      "description": "Student registered in a class",
       "type": "object",
       "properties": {
         "class_id": { "type": "string" },
         "roll_no": { "type": "string" },
         "name": { "type": "string" }
       },
-      "required": ["class_id", "roll_no", "name"]
+      "required": ["class_id", "roll_no"]
+    },
+    "Rubric": {
+      "title": "Rubric",
+      "description": "Evaluation rubric",
+      "type": "object",
+      "properties": {
+        "subject_id": { "type": "string" },
+        "faculty_id": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "criteria_json": { "type": "string" }
+      },
+      "required": ["subject_id", "faculty_id", "name"]
     },
     "Evaluation": {
       "title": "Evaluation",
-      "description": "Result of an AI answer sheet assessment",
+      "description": "Result of an AI evaluation",
       "type": "object",
       "properties": {
         "student_id": { "type": "string" },
@@ -61,45 +76,32 @@
         "created_at": { "type": "string", "format": "date-time" }
       },
       "required": ["student_id", "subject_id", "total_marks", "obtained_marks"]
-    },
-    "Rubric": {
-      "title": "Rubric",
-      "description": "Scoring criteria for an assessment",
-      "type": "object",
-      "properties": {
-        "subject_id": { "type": "string" },
-        "name": { "type": "string" },
-        "type": { "type": "string", "enum": ["unit", "test", "exam"] },
-        "criteria_json": { "type": "string" },
-        "faculty_id": { "type": "string" }
-      },
-      "required": ["subject_id", "name", "criteria_json", "faculty_id"]
     }
   },
   "firestore": {
     "/faculty/{facultyId}": {
       "schema": "Faculty",
-      "description": "Faculty profiles"
+      "description": "Top-level faculty documents"
     },
     "/faculty/{facultyId}/classes/{classId}": {
       "schema": "Class",
-      "description": "Classes managed by a faculty"
+      "description": "Classes belonging to a facultyMember"
     },
     "/faculty/{facultyId}/subjects/{subjectId}": {
       "schema": "Subject",
-      "description": "Subjects managed by a faculty"
+      "description": "Subjects belonging to a facultyMember"
     },
     "/faculty/{facultyId}/students/{studentId}": {
       "schema": "Student",
-      "description": "Students managed by a faculty"
+      "description": "Students belonging to a facultyMember"
     },
     "/faculty/{facultyId}/rubrics/{rubricId}": {
       "schema": "Rubric",
-      "description": "Faculty rubrics"
+      "description": "Rubrics belonging to a facultyMember"
     },
     "/faculty/{facultyId}/evaluations/{evaluationId}": {
       "schema": "Evaluation",
-      "description": "Evaluations performed by the faculty"
+      "description": "Evaluations belonging to a facultyMember"
     }
   }
 }

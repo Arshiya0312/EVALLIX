@@ -19,7 +19,10 @@ import {
   Layers,
   Sparkles,
   ToggleLeft,
-  Save
+  Save,
+  Users,
+  Eye,
+  Trash2
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -33,6 +36,21 @@ import {
   SelectValue 
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  Cell,
+  Radar,
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  PolarRadiusAxis
+} from 'recharts';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
@@ -93,6 +111,16 @@ const NeuralBackground = () => (
   </div>
 );
 
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger,
+  DialogDescription,
+  DialogFooter
+} from '@/components/ui/dialog';
+
 export default function Evaluation() {
   const [classes, setClasses] = React.useState<Class[]>([]);
   const [subjects, setSubjects] = React.useState<Subject[]>([]);
@@ -101,6 +129,8 @@ export default function Evaluation() {
   const [selectedClass, setSelectedClass] = React.useState<string>('');
   const [selectedSubject, setSelectedSubject] = React.useState<string>('');
   const [selectedStudent, setSelectedStudent] = React.useState<string>('');
+
+  const [isLoadingLists, setIsLoadingLists] = React.useState(true);
   
   const [useRubric, setUseRubric] = React.useState(false);
   const [rubricType, setRubricType] = React.useState<'question' | 'unit'>('question');
@@ -113,7 +143,13 @@ export default function Evaluation() {
   
   const [questionPaper, setQuestionPaper] = React.useState<File | null>(null);
   const [answerSheet, setAnswerSheet] = React.useState<File | null>(null);
+  const [questionUrl, setQuestionUrl] = React.useState<string | null>(null);
+  const [answerUrl, setAnswerUrl] = React.useState<string | null>(null);
   
+  const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
+  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = React.useState('');
+
   const [isEvaluating, setIsEvaluating] = React.useState(false);
   const [result, setResult] = React.useState<EvaluationResult | null>(null);
   const [progress, setProgress] = React.useState(0);
@@ -131,14 +167,15 @@ export default function Evaluation() {
         scale: 2,
         useCORS: true,
         logging: false,
+        width: 1000,
         backgroundColor: document.documentElement.classList.contains('dark') ? '#020617' : '#ffffff',
         onclone: (clonedDoc) => {
           const frame = clonedDoc.getElementById('report-frame');
           if (frame) {
-            // Expand frame and remove clipping
+            frame.style.width = '1000px';
             frame.style.height = 'auto';
             frame.style.overflow = 'visible';
-            frame.style.borderRadius = '0'; // Clean edges for PDF
+            frame.style.borderRadius = '0';
             
             // Re-target potential clipped areas
             const query = frame.querySelectorAll('[class*="h-[600px]"], [class*="max-h-"]');
@@ -183,11 +220,49 @@ export default function Evaluation() {
   };
 
   React.useEffect(() => {
+    setIsLoadingLists(true);
     fetch('/api/classes', { headers: { 'Authorization': `Bearer ${token}` } })
       .then(res => res.ok ? res.json() : [])
-      .then(data => setClasses(Array.isArray(data) ? data : []))
-      .catch(() => setClasses([]));
+      .then(data => {
+        setClasses(Array.isArray(data) ? data : []);
+      })
+      .catch(() => setClasses([]))
+      .finally(() => setIsLoadingLists(false));
   }, [token]);
+
+  React.useEffect(() => {
+    return () => {
+      if (questionUrl) URL.revokeObjectURL(questionUrl);
+      if (answerUrl) URL.revokeObjectURL(answerUrl);
+    };
+  }, [questionUrl, answerUrl]);
+
+  const handleFileChange = (type: 'qp' | 'as', file: File | null) => {
+    if (type === 'qp') {
+      if (questionUrl) URL.revokeObjectURL(questionUrl);
+      setQuestionPaper(file);
+      setQuestionUrl(file ? URL.createObjectURL(file) : null);
+    } else {
+      if (answerUrl) URL.revokeObjectURL(answerUrl);
+      setAnswerSheet(file);
+      setAnswerUrl(file ? URL.createObjectURL(file) : null);
+    }
+  };
+
+  const getSelectedClassName = () => {
+    const c = classes.find(c => String(c.id) === selectedClass);
+    return c ? c.name : "Select Class";
+  };
+
+  const getSelectedSubjectName = () => {
+    const s = subjects.find(s => String(s.id) === selectedSubject);
+    return s ? s.name : "Select Subject";
+  };
+
+  const getSelectedStudentName = () => {
+    const s = students.find(s => String(s.id) === selectedStudent);
+    return s ? `#${s.roll_no} - ${s.name}` : "Identify Roll No";
+  };
 
   const handleClassChange = async (val: string) => {
     setSelectedClass(val);
@@ -307,37 +382,43 @@ export default function Evaluation() {
           {/* Controls Panel */}
           <Card className="lg:col-span-7 lg:order-1 glass-card border-none shadow-2xl p-10 md:p-14 rounded-[4rem] h-fit bg-white/90 dark:bg-slate-900/90 max-w-[615.271px]">
             <div className="space-y-12">
-                  <div className="space-y-10">
                     <div className="space-y-5">
                        <label className="text-[11px] font-black uppercase tracking-[0.4em] text-primary">Target Class</label>
-                       <Select onValueChange={handleClassChange}>
+                       <Select value={selectedClass} onValueChange={handleClassChange}>
                          <SelectTrigger className="h-16 border-primary/5 shadow-xl shadow-primary/5 bg-white/50 backdrop-blur-xl rounded-2xl text-base px-8 font-black">
-                           <SelectValue placeholder="Select Class" />
+                            <Layers className="text-primary/40 mr-3" size={18} />
+                            <SelectValue placeholder="Select Class" />
                          </SelectTrigger>
                          <SelectContent className="rounded-[2.5rem] border-none shadow-3xl dark:bg-slate-900 min-w-[200px] p-2">
-                           {classes.map(c => <SelectItem key={c.id} value={c.id.toString()} className="h-12 rounded-xl px-6 font-bold">{c.name}</SelectItem>)}
+                           {isLoadingLists ? (
+                             <div className="p-4 text-center text-[10px] font-black text-slate-400 animate-pulse">SYNCHRONIZING...</div>
+                           ) : (
+                             classes.map(c => <SelectItem key={c.id} value={String(c.id)} className="h-12 rounded-xl px-6 font-bold">{c.name}</SelectItem>)
+                           )}
                          </SelectContent>
                        </Select>
                     </div>
 
                     <div className="space-y-5">
-                       <div className="flex justify-between items-end">
+                       <div className="flex justify-between items-center px-1">
                         <label className="text-[11px] font-black uppercase tracking-[0.4em] text-primary">Subject Node</label>
                         {selectedSubject && (
-                          <button 
+                          <Button 
+                            variant="link"
                             onClick={() => setShowRubricManager(true)}
-                            className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline hover:text-primary/80 transition-colors pb-1"
+                            className="h-auto p-0 text-[10px] font-black uppercase tracking-widest text-primary hover:text-primary/70 transition-colors"
                           >
                             Manage Rubrics
-                          </button>
+                          </Button>
                         )}
                        </div>
                        <Select onValueChange={handleSubjectChange} disabled={!selectedClass} value={selectedSubject}>
                          <SelectTrigger className="h-16 border-primary/5 shadow-xl shadow-primary/5 bg-white/50 backdrop-blur-xl rounded-2xl text-base px-8 font-black">
-                           <SelectValue placeholder="Select Subject" />
+                            <BookOpen className="text-primary/40 mr-3" size={18} />
+                            <SelectValue placeholder="Select Subject" />
                          </SelectTrigger>
                          <SelectContent className="rounded-[2.5rem] border-none shadow-3xl dark:bg-slate-900 min-w-[200px] p-2">
-                           {subjects.map(s => <SelectItem key={s.id} value={s.id.toString()} className="h-12 rounded-xl px-6 font-bold">{s.name}</SelectItem>)}
+                           {subjects.map(s => <SelectItem key={s.id} value={String(s.id)} className="h-12 rounded-xl px-6 font-bold">{s.name}</SelectItem>) || <div className="p-4 text-center text-xs opacity-50">Empty Node</div>}
                          </SelectContent>
                        </Select>
                     </div>
@@ -346,14 +427,14 @@ export default function Evaluation() {
                        <label className="text-[11px] font-black uppercase tracking-[0.4em] text-primary">Student Entity</label>
                        <Select onValueChange={setSelectedStudent} disabled={!selectedClass} value={selectedStudent}>
                          <SelectTrigger className="h-16 border-primary/5 shadow-xl shadow-primary/5 bg-white/50 backdrop-blur-xl rounded-2xl text-base px-8 font-black">
-                           <SelectValue placeholder="Identify Roll No" />
+                             <Users className="text-primary/40 mr-3" size={18} />
+                             <SelectValue placeholder="Identify Roll No" />
                          </SelectTrigger>
                          <SelectContent className="rounded-[2.5rem] border-none shadow-3xl dark:bg-slate-900 min-w-[200px] p-2">
-                           {students.map(s => <SelectItem key={s.id} value={s.id.toString()} className="h-14 rounded-2xl px-6 font-bold truncate">#{s.roll_no} - {s.name}</SelectItem>)}
+                           {students.map(s => <SelectItem key={s.id} value={String(s.id)} className="h-14 rounded-2xl px-6 font-bold truncate">#{s.roll_no} - {s.name}</SelectItem>) || <div className="p-4 text-center text-xs opacity-50">No Entities Found</div>}
                          </SelectContent>
                        </Select>
                     </div>
-                  </div>
 
                <div className="pt-10 space-y-10 border-t border-slate-50 dark:border-white/5">
                     {/* Rubric Toggle - Relocated above uploads */}
@@ -428,47 +509,95 @@ export default function Evaluation() {
                       </div>
                     </div>
 
-                  <Button 
-                    variant="ghost" 
-                    className="w-full max-w-[551.5px] mx-auto h-44 rounded-[4rem] border-4 border-dashed border-primary/10 flex flex-col items-center justify-center gap-3 hover:bg-primary/5 hover:border-primary transition-all p-10 group shadow-lg"
-                    onClick={() => document.getElementById('qp-input')?.click()}
-                  >
-                    <div className="flex items-center gap-8">
-                       <motion.div 
-                        whileHover={{ scale: 1.1, rotate: 5 }}
-                        className={`p-6 rounded-3xl transition-all duration-500 shadow-2xl ${questionPaper ? "bg-emerald-500 text-white" : "bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white"}`}
-                       >
-                        <FileText size={48} />
-                      </motion.div>
-                      <div className="text-left w-full max-w-[300px]">
-                        <span className="text-2xl font-black uppercase tracking-tighter block leading-none">{questionPaper ? 'Paper Loaded' : 'Upload Question Paper'}</span>
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2 block">{questionPaper ? 'System Ready' : 'Source Node Required'}</span>
-                      </div>
-                    </div>
-                    {questionPaper && <span className="text-sm text-emerald-500 font-black truncate max-w-[300px] mt-4 px-4 py-2 bg-emerald-50/50 rounded-full border border-emerald-100">{questionPaper.name}</span>}
-                    <input id="qp-input" type="file" className="hidden" onChange={e => setQuestionPaper(e.target.files?.[0] || null)} />
-                  </Button>
+                  <div className="space-y-4">
+                    <Button 
+                      variant="ghost" 
+                      className="w-full h-44 rounded-[4rem] border-4 border-dashed border-primary/10 flex flex-col items-center justify-center gap-3 hover:bg-primary/5 hover:border-primary transition-all p-8 group shadow-lg relative overflow-hidden"
+                      onClick={() => !questionPaper && document.getElementById('qp-input')?.click()}
+                    >
+                      {questionUrl ? (
+                         <div className="absolute inset-0 w-full h-full">
+                           {questionPaper?.type?.startsWith('image/') ? (
+                             <img src={questionUrl} alt="Preview" className="w-full h-full object-cover opacity-20" />
+                           ) : (
+                             <div className="w-full h-full flex items-center justify-center opacity-10">
+                               <FileText size={120} />
+                             </div>
+                           )}
+                           <div className="absolute inset-0 bg-gradient-to-t from-white/90 dark:from-slate-900/90 flex flex-col items-center justify-center p-8">
+                             <span className="text-xl font-black text-slate-800 dark:text-white truncate max-w-full mb-2">{questionPaper?.name}</span>
+                             <div className="flex gap-2">
+                               <Button size="sm" variant="outline" className="rounded-full bg-white/50" onClick={(e) => { 
+                                 e.stopPropagation(); 
+                                 setPreviewUrl(questionUrl);
+                                 setPreviewTitle("Question Paper Preview");
+                                 setIsPreviewOpen(true);
+                               }}>View Full</Button>
+                               <Button size="sm" variant="ghost" className="rounded-full text-red-500" onClick={(e) => { e.stopPropagation(); handleFileChange('qp', null); }}>Remove</Button>
+                             </div>
+                           </div>
+                         </div>
+                      ) : (
+                        <div className="flex items-center gap-8">
+                          <motion.div 
+                            whileHover={{ scale: 1.1, rotate: 5 }}
+                            className="p-6 rounded-3xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white shadow-2xl"
+                          >
+                            <FileText size={48} />
+                          </motion.div>
+                          <div className="text-left">
+                            <span className="text-2xl font-black uppercase tracking-tighter block leading-none">Question Paper</span>
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2 block">Source Node Required</span>
+                          </div>
+                        </div>
+                      )}
+                      <input id="qp-input" type="file" className="hidden" accept="image/*,application/pdf" onChange={e => handleFileChange('qp', e.target.files?.[0] || null)} />
+                    </Button>
 
-                  <Button 
-                    variant="ghost" 
-                    className="w-full max-w-[551.5px] mx-auto h-44 rounded-[4rem] border-4 border-dashed border-primary/10 flex flex-col items-center justify-center gap-3 hover:bg-primary/5 hover:border-primary transition-all p-10 group shadow-lg"
-                    onClick={() => document.getElementById('as-input')?.click()}
-                  >
-                    <div className="flex items-center gap-8">
-                      <motion.div 
-                        whileHover={{ scale: 1.1, rotate: -5 }}
-                        className={`p-6 rounded-3xl transition-all duration-500 shadow-2xl ${answerSheet ? "bg-emerald-500 text-white" : "bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white"}`}
-                      >
-                        <FileDigit size={48} />
-                      </motion.div>
-                      <div className="text-left w-full max-w-[300px]">
-                        <span className="text-2xl font-black uppercase tracking-tighter block leading-none">{answerSheet ? 'Script Loaded' : 'Upload Answer Sheet'}</span>
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2 block">{answerSheet ? 'Scanning Active' : 'Entity Script Required'}</span>
-                      </div>
-                    </div>
-                    {answerSheet && <span className="text-sm text-emerald-500 font-black truncate max-w-[300px] mt-4 px-4 py-2 bg-emerald-50/50 rounded-full border border-emerald-100">{answerSheet.name}</span>}
-                    <input id="as-input" type="file" className="hidden" onChange={e => setAnswerSheet(e.target.files?.[0] || null)} />
-                  </Button>
+                    <Button 
+                      variant="ghost" 
+                      className="w-full h-44 rounded-[4rem] border-4 border-dashed border-primary/10 flex flex-col items-center justify-center gap-3 hover:bg-primary/5 hover:border-primary transition-all p-8 group shadow-lg relative overflow-hidden"
+                      onClick={() => !answerSheet && document.getElementById('as-input')?.click()}
+                    >
+                      {answerUrl ? (
+                         <div className="absolute inset-0 w-full h-full">
+                           {answerSheet?.type?.startsWith('image/') ? (
+                             <img src={answerUrl} alt="Preview" className="w-full h-full object-cover opacity-20" />
+                           ) : (
+                             <div className="w-full h-full flex items-center justify-center opacity-10">
+                               <FileDigit size={120} />
+                             </div>
+                           )}
+                           <div className="absolute inset-0 bg-gradient-to-t from-white/90 dark:from-slate-900/90 flex flex-col items-center justify-center p-8">
+                             <span className="text-xl font-black text-slate-800 dark:text-white truncate max-w-full mb-2">{answerSheet?.name}</span>
+                             <div className="flex gap-2">
+                               <Button size="sm" variant="outline" className="rounded-full bg-white/50" onClick={(e) => { 
+                                 e.stopPropagation(); 
+                                 setPreviewUrl(answerUrl);
+                                 setPreviewTitle("Answer Sheet Preview");
+                                 setIsPreviewOpen(true);
+                               }}>View Full</Button>
+                               <Button size="sm" variant="ghost" className="rounded-full text-red-500" onClick={(e) => { e.stopPropagation(); handleFileChange('as', null); }}>Remove</Button>
+                             </div>
+                           </div>
+                         </div>
+                      ) : (
+                        <div className="flex items-center gap-8">
+                          <motion.div 
+                            whileHover={{ scale: 1.1, rotate: -5 }}
+                            className="p-6 rounded-3xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-white shadow-2xl"
+                          >
+                            <FileDigit size={48} />
+                          </motion.div>
+                          <div className="text-left">
+                            <span className="text-2xl font-black uppercase tracking-tighter block leading-none">Answer Sheet</span>
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2 block">Entity Script Required</span>
+                          </div>
+                        </div>
+                      )}
+                      <input id="as-input" type="file" className="hidden" accept="image/*,application/pdf" onChange={e => handleFileChange('as', e.target.files?.[0] || null)} />
+                    </Button>
+                  </div>
                </div>
 
                <Button 
@@ -582,29 +711,29 @@ export default function Evaluation() {
              <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">
                 {/* Header Section */}
                 <div className="lg:col-span-12 flex flex-col md:flex-row justify-between items-start md:items-end border-b border-slate-100 dark:border-white/5 pb-16 gap-12">
-                   <div className="space-y-6">
-                      <div className="flex items-center gap-4">
-                        <Badge className="bg-primary text-white border-none uppercase font-black tracking-[0.5em] text-[8px] py-1.5 px-4 rounded-full shadow-lg shadow-primary/20">Official Evaluation Matrix</Badge>
-                        <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest whitespace-nowrap">Node ID: {selectedStudent}-{selectedSubject}</span>
-                      </div>
-                      <h2 className="text-7xl font-black tracking-tighter text-slate-800 dark:text-white leading-[0.9]">
-                         {students.find(s => s.id.toString() === selectedStudent)?.name}
-                      </h2>
-                      <div className="flex flex-wrap gap-x-12 gap-y-4 pt-4 border-t border-slate-50 dark:border-white/5">
-                        <div className="group">
-                           <p className="text-[9px] font-black text-primary uppercase tracking-[0.4em] mb-1 opacity-60">Roll Identifier</p>
-                           <p className="text-lg font-black text-slate-700 dark:text-slate-300 tracking-tight">{students.find(s => s.id.toString() === selectedStudent)?.roll_no}</p>
-                        </div>
-                        <div className="group">
-                           <p className="text-[9px] font-black text-primary uppercase tracking-[0.4em] mb-1 opacity-60">Field Node</p>
-                           <p className="text-lg font-black text-slate-700 dark:text-slate-300 tracking-tight">{subjects.find(s => s.id.toString() === selectedSubject)?.name}</p>
-                        </div>
-                        <div className="group">
-                           <p className="text-[9px] font-black text-primary uppercase tracking-[0.4em] mb-1 opacity-60">Cycle Date</p>
-                           <p className="text-lg font-black text-slate-700 dark:text-slate-300 tracking-tight">{new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
-                        </div>
-                      </div>
-                   </div>
+              <div className="space-y-6">
+                <div className="flex items-center gap-4">
+                  <Badge className="bg-primary text-white border-none uppercase font-black tracking-[0.5em] text-[8px] py-1.5 px-4 rounded-full shadow-lg shadow-primary/20">Official Evaluation Matrix</Badge>
+                  <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest whitespace-nowrap">Node ID: {selectedStudent}-{selectedSubject}</span>
+                </div>
+                <h2 className="text-7xl font-black tracking-tight text-slate-800 dark:text-white leading-[1.1]">
+                   {students.find(s => s.id.toString() === selectedStudent)?.name}
+                </h2>
+                <div className="flex flex-wrap gap-x-12 gap-y-4 pt-4 border-t border-slate-50 dark:border-white/5">
+                  <div className="group">
+                     <p className="text-[9px] font-black text-primary uppercase tracking-[0.4em] mb-1 opacity-60">Roll Identifier</p>
+                     <p className="text-lg font-black text-slate-700 dark:text-slate-300 tracking-tight">{students.find(s => s.id.toString() === selectedStudent)?.roll_no}</p>
+                  </div>
+                  <div className="group">
+                     <p className="text-[9px] font-black text-primary uppercase tracking-[0.4em] mb-1 opacity-60">Field Node</p>
+                     <p className="text-lg font-black text-slate-700 dark:text-slate-300 tracking-tight">{subjects.find(s => s.id.toString() === selectedSubject)?.name}</p>
+                  </div>
+                  <div className="group">
+                     <p className="text-[9px] font-black text-primary uppercase tracking-[0.4em] mb-1 opacity-60">Cycle Date</p>
+                     <p className="text-lg font-black text-slate-700 dark:text-slate-300 tracking-tight">{new Date().toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                  </div>
+                </div>
+             </div>
 
                    <div className="flex items-center gap-10 bg-slate-50 dark:bg-slate-900/50 p-10 rounded-[4rem] border border-slate-100 dark:border-white/5 shadow-inner">
                       <div className="text-center">
@@ -685,6 +814,50 @@ export default function Evaluation() {
                       </div>
                    </div>
 
+                   <div className="lg:col-span-12">
+                      <Card className="p-12 rounded-[4rem] bg-slate-50/50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/5">
+                        <div className="flex flex-col md:flex-row gap-12 items-center">
+                          <div className="flex-1 space-y-6">
+                            <div>
+                               <h3 className="text-2xl font-black tracking-tight text-slate-800 dark:text-white">Cognitive Performance Vectors</h3>
+                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Multi-dimensional rubric analysis</p>
+                            </div>
+                            <div className="space-y-4">
+                               {result.questions.map((q, i) => (
+                                 <div key={i} className="flex justify-between items-center text-sm">
+                                   <span className="font-bold text-slate-500 uppercase tracking-widest text-[10px]">Segment {q.q_no}</span>
+                                   <Badge variant="outline" className="font-black text-primary border-primary/20">{Math.round((q.obtained_marks / q.max_marks) * 100)}%</Badge>
+                                 </div>
+                               ))}
+                            </div>
+                          </div>
+                          <div className="w-full md:w-[450px] h-[350px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart cx="50%" cy="50%" outerRadius="80%" data={result.questions.map(q => ({ 
+                subject: `Q${q.q_no}`, 
+                A: (q.obtained_marks / q.max_marks) * 100,
+                fullMark: 100 
+              }))}>
+                <PolarGrid stroke="#e2e8f0" />
+                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fontWeight: 900, fill: '#94a3b8' }} />
+                <Radar
+                  name="Proficiency %"
+                  dataKey="A"
+                  stroke="hsl(var(--primary))"
+                  fill="hsl(var(--primary))"
+                  fillOpacity={0.2}
+                />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value: any) => [`${Math.round(value)}%`, "Proficiency"]}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      </Card>
+                   </div>
+
                    {/* Granular Matrix */}
                    <div className="space-y-8">
                       <div className="flex items-center gap-6 mb-4">
@@ -736,6 +909,57 @@ export default function Evaluation() {
           </div>
         </motion.div>
       )}
+
+      {/* Preview Dialog */}
+      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <DialogContent className="max-w-5xl h-[85vh] p-0 overflow-hidden bg-slate-900 border-none rounded-[3rem] shadow-4xl flex flex-col z-[100]">
+          <DialogHeader className="p-8 border-b border-white/5 bg-slate-900 text-white flex flex-row items-center justify-between shrink-0">
+            <div>
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    if (!previewUrl) return;
+                    const a = document.createElement('a');
+                    a.href = previewUrl;
+                    a.download = previewTitle.includes('Paper') ? questionPaper?.name || 'question_paper' : answerSheet?.name || 'answer_sheet';
+                    a.click();
+                  }}
+                  className="rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10 gap-2 h-9"
+                >
+                  <Download size={14} /> Download
+                </Button>
+                <DialogTitle className="text-2xl font-black">{previewTitle}</DialogTitle>
+              </div>
+              <DialogDescription className="text-xs text-white/40 uppercase tracking-widest mt-1">High-fidelity forensic view</DialogDescription>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 w-full bg-black/40 flex items-center justify-center p-4 relative">
+             {previewUrl && (previewUrl.includes('blob:') || previewUrl.startsWith('data:')) ? (
+                <div className="absolute inset-4 rounded-2xl overflow-hidden shadow-2xl bg-white/5">
+                   {previewTitle.includes('Paper') && questionPaper?.type === 'application/pdf' ? (
+                     <iframe src={`${previewUrl}#toolbar=0`} className="w-full h-full border-none bg-white" title="PDF Preview" />
+                   ) : previewTitle.includes('Answer') && answerSheet?.type === 'application/pdf' ? (
+                     <iframe src={`${previewUrl}#toolbar=0`} className="w-full h-full border-none bg-white" title="PDF Preview" />
+                   ) : (
+                     <img src={previewUrl} alt="Preview" className="w-full h-full object-contain" />
+                   )}
+                </div>
+             ) : (
+                <div className="text-white opacity-20 flex flex-col items-center gap-4">
+                  <AlertCircle size={80} />
+                  <p className="font-black uppercase tracking-widest text-sm">Buffer Empty</p>
+                </div>
+             )}
+          </div>
+          <DialogFooter className="p-6 bg-slate-900 border-t border-white/5 shrink-0">
+             <Button onClick={() => setIsPreviewOpen(false)} className="rounded-xl px-10 font-bold bg-white text-slate-900 hover:bg-slate-200">
+               Terminate View
+             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

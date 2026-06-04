@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { jsPDF } from 'jspdf';
@@ -173,21 +172,7 @@ export default function Settings() {
                    <CardDescription className="font-bold text-slate-500 uppercase text-[10px] tracking-widest mt-2">Manage your faculty credentials and visibility.</CardDescription>
                  </CardHeader>
                  <CardContent className="p-10 space-y-10">
-                   <div className="flex flex-col md:flex-row gap-10 items-center md:items-start">
-                      <div className="relative group">
-                        <Avatar className="h-32 w-32 border-4 border-primary/10 shadow-2xl">
-                          <AvatarImage src={user?.photo} />
-                          <AvatarFallback className="bg-primary text-white text-4xl font-black">{user?.name?.[0]}</AvatarFallback>
-                        </Avatar>
-                        <Button 
-                          onClick={handlePhotoUpload}
-                          size="icon" 
-                          className="absolute bottom-0 right-0 h-10 w-10 rounded-full bg-white dark:bg-slate-800 shadow-xl border border-primary/10 text-primary opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100"
-                        >
-                           <Camera size={18} />
-                        </Button>
-                      </div>
-                      
+                    <div className="flex flex-col md:flex-row gap-10 items-center md:items-start">
                       <div className="flex-1 space-y-6 w-full">
                         <div className="grid gap-3">
                           <Label className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Academic Nomenclature</Label>

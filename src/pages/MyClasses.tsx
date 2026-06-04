@@ -12,7 +12,9 @@ import {
   X,
   FileText,
   ChevronRight,
-  GraduationCap
+  GraduationCap,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -48,6 +50,8 @@ export default function MyClasses() {
 
   const { token } = useAuth();
 
+  const [showAddDialog, setShowAddDialog] = React.useState(false);
+
   const fetchData = async () => {
     try {
       const res = await fetch('/api/classes', {
@@ -57,9 +61,10 @@ export default function MyClasses() {
         const data = await res.json();
         setClasses(Array.isArray(data) ? data : []);
       }
-      setLoading(false);
     } catch (e) {
-      toast.error("Failed to sync classes");
+      console.warn("Sync classes failed");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -71,26 +76,49 @@ export default function MyClasses() {
 
   const handleCreateClass = async () => {
     if (!newClass.name) return toast.error("Class name is required");
-    const res = await fetch('/api/classes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(newClass)
-    });
-    if (res.ok) {
-      toast.success("Class node initialized");
-      fetchData();
-      setNewClass({ name: '', semester: '', year: '', section: '' });
+    setLoading(true);
+    try {
+      const res = await fetch('/api/classes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(newClass)
+      });
+      if (res.ok) {
+        toast.success("Class node initialized");
+        await fetchData();
+        setNewClass({ name: '', semester: '', year: '', section: '' });
+        setShowAddDialog(false);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error || "Failed to create class infrastructure");
+      }
+    } catch (err: any) {
+      toast.error("Network synchronization error");
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleSelectClass = async (cls: Class) => {
     setActiveClass(cls);
-    const [subRes, stuRes] = await Promise.all([
-      fetch(`/api/classes/${cls.id}/subjects`, { headers: { 'Authorization': `Bearer ${token}` } }),
-      fetch(`/api/classes/${cls.id}/students`, { headers: { 'Authorization': `Bearer ${token}` } })
-    ]);
-    setSubjects(await subRes.json());
-    setStudents(await stuRes.json());
+    setLoading(true);
+    try {
+      const [subRes, stuRes] = await Promise.all([
+        fetch(`/api/classes/${cls.id}/subjects`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`/api/classes/${cls.id}/students`, { headers: { 'Authorization': `Bearer ${token}` } })
+      ]);
+      
+      if (!subRes.ok || !stuRes.ok) throw new Error("Synchronization failed");
+      
+      setSubjects(await subRes.json());
+      setStudents(await stuRes.json());
+    } catch (err) {
+      toast.error("Failed to sync neural nodes for this class");
+      setSubjects([]);
+      setStudents([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAddSubject = async () => {
@@ -149,15 +177,13 @@ export default function MyClasses() {
           <p className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Cinematic Academic Architecture</p>
         </div>
 
-        <Dialog>
-          <DialogTrigger
-            render={
-              <Button className="h-14 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 font-bold gap-3 btn-pulse">
-                <Plus size={20} />
-                Add Class
-              </Button>
-            }
-          />
+        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+          <DialogTrigger render={(props) => (
+            <div {...props} className="h-14 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 font-bold gap-3 btn-pulse flex items-center text-white cursor-pointer transition-all">
+              <Plus size={20} />
+              Add Class
+            </div>
+          )} />
           <DialogContent className="sm:max-w-[425px] glass-card border-none shadow-3xl rounded-[2.5rem] p-10 bg-white/90 dark:bg-slate-900/90">
             <DialogHeader className="mb-6">
               <DialogTitle className="text-3xl font-black tracking-tight text-slate-800 dark:text-white italic">Class Architecture</DialogTitle>
@@ -336,10 +362,19 @@ export default function MyClasses() {
                                           };
                                           input.click();
                                         }}
-                                        className={`h-10 w-full rounded-xl border-dashed border-primary/20 ${sub.textbook_url ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white dark:bg-slate-900 border-primary/20 text-slate-500'} text-[9px] font-black uppercase tracking-widest gap-2`}
+                                        className={`h-11 w-full rounded-xl border-dashed transition-all duration-300 ${sub.textbook_url ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-white dark:bg-slate-900 border-primary/20 text-slate-500 hover:border-primary/40'} text-[9px] font-black uppercase tracking-widest gap-2 flex items-center justify-center`}
                                       >
-                                         <Upload size={14} />
-                                         {sub.textbook_url ? 'Update' : 'Upload'}
+                                         {sub.textbook_url ? (
+                                           <>
+                                             <CheckCircle2 size={16} className="text-emerald-500" />
+                                             <span>Synced</span>
+                                           </>
+                                         ) : (
+                                           <>
+                                             <Upload size={14} />
+                                             <span>Upload</span>
+                                           </>
+                                         )}
                                       </Button>
                                    </div>
                                    <div className="space-y-2">
@@ -355,10 +390,19 @@ export default function MyClasses() {
                                           };
                                           input.click();
                                         }}
-                                        className={`h-10 w-full rounded-xl border-dashed border-primary/20 ${sub.notes_url ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white dark:bg-slate-900 border-primary/20 text-slate-500'} text-[9px] font-black uppercase tracking-widest gap-2`}
+                                        className={`h-11 w-full rounded-xl border-dashed transition-all duration-300 ${sub.notes_url ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-white dark:bg-slate-900 border-primary/20 text-slate-500 hover:border-primary/40'} text-[9px] font-black uppercase tracking-widest gap-2 flex items-center justify-center`}
                                       >
-                                         <Upload size={14} />
-                                         {sub.notes_url ? 'Update' : 'Upload'}
+                                         {sub.notes_url ? (
+                                           <>
+                                             <CheckCircle2 size={16} className="text-emerald-500" />
+                                             <span>Synced</span>
+                                           </>
+                                         ) : (
+                                           <>
+                                             <Upload size={14} />
+                                             <span>Upload</span>
+                                           </>
+                                         )}
                                       </Button>
                                    </div>
                                 </div>

@@ -43,6 +43,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <Toaster position="top-right" expand={true} richColors closeButton />
         <div className="font-sans antialiased">
           <Routes>
             <Route 
@@ -63,7 +64,6 @@ export default function App() {
             
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-          <Toaster position="top-right" expand={true} richColors closeButton />
         </div>
       </BrowserRouter>
     </AuthProvider>

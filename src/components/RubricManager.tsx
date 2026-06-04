@@ -146,17 +146,17 @@ export default function RubricManager({ subjectId, onClose, subjectData }: Rubri
         <div className="flex-1 overflow-hidden flex">
           {/* Side Navigation - Library */}
           <div className="w-[450px] border-r border-slate-100 dark:border-white/10 p-10 flex flex-col gap-10 bg-slate-50/50 dark:bg-slate-900/20">
-             <div className="space-y-6">
-                <label className="text-[11px] font-black uppercase tracking-[0.5em] text-slate-400 px-2 text-center block">Cognitive Library Hub</label>
-                <div className="space-y-4 max-w-[155.062px] mx-auto">
-                  <Button 
-                    onClick={() => { setIsAdding(true); }}
-                    className="w-full h-20 rounded-[2rem] bg-primary hover:bg-primary/95 font-black uppercase tracking-[0.3em] text-[10px] gap-2 shadow-2xl shadow-primary/40 text-white border-2 border-white/20 px-4"
-                  >
-                    <Plus size={18} /> Initialize
-                  </Button>
+                <div className="space-y-6">
+                  <label className="text-[11px] font-black uppercase tracking-[0.5em] text-slate-400 px-2 text-left block">Cognitive Library Hub</label>
+                  <div className="space-y-4 w-full">
+                    <Button 
+                      onClick={() => { setIsAdding(true); }}
+                      className="w-full h-16 rounded-2xl bg-primary hover:bg-primary/95 font-black uppercase tracking-[0.4em] text-[11px] gap-3 shadow-xl shadow-primary/20 text-white border-2 border-white/10 px-6 transition-all active:scale-95"
+                    >
+                      <Plus size={18} strokeWidth={3} /> Initialize Platform
+                    </Button>
+                  </div>
                 </div>
-             </div>
 
              <ScrollArea className="flex-1">
                 <div className="space-y-5 pr-6">
@@ -166,11 +166,11 @@ export default function RubricManager({ subjectId, onClose, subjectData }: Rubri
                       key={r.id} 
                       className="p-8 rounded-[3rem] bg-white dark:bg-white/5 border border-slate-100 dark:border-white/5 group hover:border-primary/40 shadow-sm hover:shadow-2xl transition-all flex justify-between items-center"
                     >
-                      <div className="flex items-center gap-6">
-                        <div className="w-5 h-5 rounded-full bg-primary shadow-[0_0_15px_rgba(var(--color-primary),0.5)]" />
-                        <div>
-                          <p className="text-xl font-black text-slate-800 dark:text-slate-100 truncate w-48 leading-none">{r.name}</p>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.4em] mt-3">Active Architecture</p>
+                      <div className="flex items-center gap-6 overflow-hidden">
+                        <div className="w-4 h-4 rounded-full bg-primary shrink-0 shadow-[0_0_15px_rgba(var(--color-primary),0.5)]" />
+                        <div className="min-w-0">
+                          <p className="text-lg font-black text-slate-800 dark:text-slate-100 truncate leading-none">{r.name}</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em] mt-2">Active Architecture</p>
                         </div>
                       </div>
                       <Button 
@@ -263,7 +263,7 @@ export default function RubricManager({ subjectId, onClose, subjectData }: Rubri
                         <div className="space-y-6 pb-20">
                            {activeTab === 'unit' ? (
                              criteriaList.map((c, i) => (
-                               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key={i} className="group relative p-10 rounded-[3.5rem] bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-2xl transition-all hover:bg-slate-50 dark:hover:bg-white/5 max-w-[615.271px] mx-auto">
+                               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key={i} className="group relative p-10 rounded-[3.5rem] bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-2xl transition-all hover:bg-slate-50 dark:hover:bg-white/5 w-full mx-auto">
                                  <Button 
                                    variant="ghost" 
                                    size="icon" 
@@ -318,7 +318,7 @@ export default function RubricManager({ subjectId, onClose, subjectData }: Rubri
                              ))
                            ) : (
                              Object.entries(questionCriteria).map(([q, data]) => (
-                               <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} key={q} className="p-12 rounded-[4rem] bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-2xl space-y-12 max-w-[615.271px] mx-auto overflow-hidden">
+                               <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} key={q} className="p-12 rounded-[4rem] bg-white dark:bg-slate-900 border border-slate-100 dark:border-white/5 shadow-2xl space-y-12 w-full mx-auto overflow-hidden">
                                   <div className="flex justify-between items-center border-b border-slate-50 dark:border-white/5 pb-12">
                                      <div className="flex items-center gap-8">
                                        <div className="w-20 h-20 rounded-[2.5rem] bg-primary flex items-center justify-center text-white font-black text-3xl shadow-xl shadow-primary/20 italic">{q}</div>

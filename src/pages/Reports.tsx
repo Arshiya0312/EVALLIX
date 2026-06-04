@@ -12,10 +12,25 @@ import {
   BrainCircuit,
   TrendingUp,
   AlertCircle,
-  Trash2
+  Trash2,
+  BarChart3,
+  Layers
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  Cell,
+  PieChart,
+  Pie,
+  Legend
+} from 'recharts';
 import { Input } from '@/components/ui/input';
 import { 
   Select, 
@@ -35,6 +50,8 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -52,8 +69,13 @@ export default function Marksheets() {
   const [search, setSearch] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [selectedReport, setSelectedReport] = React.useState<any>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
+  const [previewUrl, setPreviewUrl] = React.useState<string | null>(null);
 
   const { token } = useAuth();
+
+  const getClassName = (id: string) => classes.find(c => String(c.id) === id)?.name || "Select Class";
+  const getSubjectName = (id: string) => subjects.find(s => String(s.id) === id)?.name || "Select Subject";
 
   React.useEffect(() => {
     fetch('/api/classes', { headers: { 'Authorization': `Bearer ${token}` } })
@@ -110,7 +132,7 @@ export default function Marksheets() {
       stu.name,
       stu.obtained_marks ?? '--',
       stu.total_marks ?? '--',
-      stu.obtained_marks !== null ? `${Math.round((stu.obtained_marks / stu.total_marks) * 100)}%` : '--',
+      stu.obtained_marks !== null ? `${stu.total_marks > 0 ? Math.round((stu.obtained_marks / stu.total_marks) * 100) : 0}%` : '--',
       stu.created_at ? new Date(stu.created_at).toLocaleDateString() : 'N/A'
     ]);
 
@@ -139,10 +161,12 @@ export default function Marksheets() {
         scale: 2,
         useCORS: true,
         logging: false,
+        width: 1000,
         backgroundColor: '#ffffff',
         onclone: (clonedDoc) => {
           const frame = clonedDoc.getElementById('report-content-dialog');
           if (frame) {
+            frame.style.width = '1000px';
             frame.style.height = 'auto';
             frame.style.overflow = 'visible';
             const viewports = frame.querySelectorAll('[data-radix-scroll-area-viewport]');
@@ -176,6 +200,68 @@ export default function Marksheets() {
       toast.error("Export failed. Memory overload.");
     }
   };
+
+  const previewReportPDF = async () => {
+    const element = document.getElementById('report-content-dialog');
+    if (!element) return;
+    
+    toast.loading("Generating forensic preview...");
+    
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        width: 1000,
+        backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          const frame = clonedDoc.getElementById('report-content-dialog');
+          if (frame) {
+            frame.style.width = '1000px';
+            frame.style.height = 'auto';
+            frame.style.overflow = 'visible';
+            const viewports = frame.querySelectorAll('[data-radix-scroll-area-viewport]');
+            viewports.forEach(vp => {
+              (vp as HTMLElement).style.height = 'auto';
+              (vp as HTMLElement).style.overflow = 'visible';
+              (vp as HTMLElement).style.display = 'block';
+            });
+          }
+        }
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const imgProps = (new jsPDF()).getImageProperties(imgData);
+      const pdfWidth = 210;
+      const scaledImgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: [pdfWidth, scaledImgHeight]
+      });
+      
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, scaledImgHeight);
+      
+      const blob = pdf.output('blob');
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      const blobURL = URL.createObjectURL(blob);
+      setPreviewUrl(blobURL);
+      setIsPreviewOpen(true);
+      toast.dismiss();
+    } catch (e) {
+      console.error("Preview Error:", e);
+      toast.dismiss();
+      toast.error("Forensic synthesis failed. Attempting direct export...");
+      downloadReportPDF();
+    }
+  };
+
+  React.useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
 
   const exportToExcel = () => {
     const ws = XLSX.utils.json_to_sheet(data.map(d => ({
@@ -223,6 +309,57 @@ export default function Marksheets() {
     }
   };
 
+  const getAnalyticsData = () => {
+    if (!data || data.length === 0) return { distribution: [], grades: [], stats: { avg: 0, max: 0, min: 0, total: 100 } };
+    
+    const validMarks = data.filter(d => d.obtained_marks !== null).map(d => d.obtained_marks);
+    if (validMarks.length === 0) return { distribution: [], grades: [], stats: { avg: 0, max: 0, min: 0, total: 100 } };
+
+    const totalMarks = data[0].total_marks || 100;
+    const stats = {
+      avg: Math.round(validMarks.reduce((a, b) => a + b, 0) / validMarks.length),
+      max: Math.max(...validMarks),
+      min: Math.min(...validMarks),
+      total: totalMarks
+    };
+
+    // Distribution
+    const bins = [
+      { name: '0-20%', count: 0, fill: '#E11D48' },
+      { name: '21-40%', count: 0, fill: '#F43F5E' },
+      { name: '41-60%', count: 0, fill: '#FB7185' },
+      { name: '61-80%', count: 0, fill: '#FDA4AF' },
+      { name: '81-100%', count: 0, fill: '#10B981' },
+    ];
+
+    const grades = [
+      { name: 'Distinction (75%+)', value: 0, fill: '#10B981' },
+      { name: 'First Class (60-74%)', value: 0, fill: '#3B82F6' },
+      { name: 'Second Class (45-59%)', value: 0, fill: '#F59E0B' },
+      { name: 'Pass (35-44%)', value: 0, fill: '#A855F7' },
+      { name: 'Critique Needed (<35%)', value: 0, fill: '#E11D48' },
+    ];
+
+    validMarks.forEach(m => {
+      const p = totalMarks > 0 ? (m / totalMarks) * 100 : 0;
+      if (p <= 20) bins[0].count++;
+      else if (p <= 40) bins[1].count++;
+      else if (p <= 60) bins[2].count++;
+      else if (p <= 80) bins[3].count++;
+      else bins[4].count++;
+
+      if (p >= 75) grades[0].value++;
+      else if (p >= 60) grades[1].value++;
+      else if (p >= 45) grades[2].value++;
+      else if (p >= 35) grades[3].value++;
+      else grades[4].value++;
+    });
+
+    return { distribution: bins, grades: grades.filter(g => g.value > 0), stats };
+  };
+
+  const analytics = getAnalyticsData();
+
   return (
     <div className="space-y-12 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 px-2">
@@ -248,13 +385,221 @@ export default function Marksheets() {
         </div>
       </div>
 
+      {selectedSubject && data.length > 0 && (
+        <div className="space-y-8">
+          <motion.div 
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+          >
+            <Card className="lg:col-span-2 glass-card border-none shadow-2xl p-10 rounded-[3rem] bg-white/80 backdrop-blur-xl">
+              <div className="flex items-center justify-between mb-10">
+                <div>
+                  <h3 className="text-2xl font-black tracking-tight text-slate-800">Performance Distribution</h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Class-wide cognitive spread</p>
+                </div>
+                <div className="flex gap-4">
+                   <div className="text-right">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Class Average</p>
+                      <p className="text-2xl font-black text-primary">{Math.round(analytics.stats.avg)} <span className="text-xs opacity-30">/ {analytics.stats.total}</span></p>
+                   </div>
+                </div>
+              </div>
+              
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={analytics.distribution}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 10, fontWeight: 900, fill: '#94a3b8' }} 
+                      dy={10}
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 10, fontWeight: 900, fill: '#94a3b8' }} 
+                    />
+                    <Tooltip 
+                      cursor={{ fill: 'transparent' }} 
+                      contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '12px' }}
+                      labelStyle={{ fontWeight: 900, fontSize: '12px', marginBottom: '4px' }}
+                    />
+                    <Bar dataKey="count" radius={[8, 8, 0, 0]} barSize={60}>
+                      {analytics.distribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} fillOpacity={0.8} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+
+            <Card className="glass-card border-none shadow-2xl p-10 rounded-[3rem] bg-white/80 backdrop-blur-xl flex flex-col justify-between">
+              <div className="space-y-2 mb-8">
+                <h3 className="text-2xl font-black tracking-tight text-slate-800">Neural Benchmarks</h3>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Key performance indicators</p>
+              </div>
+
+              <div className="space-y-6">
+                <div className="p-6 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-emerald-500">
+                      <TrendingUp size={24} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Top Score</p>
+                      <p className="text-2xl font-black text-slate-800">{analytics.stats.max}</p>
+                    </div>
+                  </div>
+                  <div className="h-2 w-16 bg-emerald-200 rounded-full overflow-hidden">
+                     <div className="h-full bg-emerald-500" style={{ width: '100%' }} />
+                  </div>
+                </div>
+
+                <div className="p-6 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-blue-500">
+                      <BarChart3 size={24} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Lowest Score</p>
+                      <p className="text-2xl font-black text-slate-800">{analytics.stats.min}</p>
+                    </div>
+                  </div>
+                  <div className="h-2 w-16 bg-blue-200 rounded-full overflow-hidden">
+                     <div className="h-full bg-blue-500" style={{ width: `${(analytics.stats.min / analytics.stats.max) * 100}%` }} />
+                  </div>
+                </div>
+
+                <div className="p-6 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-red-500">
+                      <BrainCircuit size={24} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-red-600 uppercase tracking-widest">Participation</p>
+                      <p className="text-2xl font-black text-slate-800">{data.filter(d => d.obtained_marks !== null).length}<span className="text-xs opacity-30 font-bold ml-1">/ {data.length}</span></p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <Button className="w-full h-14 rounded-2xl bg-slate-900 hover:bg-black text-white font-black uppercase tracking-widest text-[10px] gap-3 shadow-xl shadow-slate-900/10 mt-8">
+                Neural Insight Deep Dive
+              </Button>
+            </Card>
+          </motion.div>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="grid grid-cols-1 gap-8"
+          >
+            <Card className="glass-card border-none shadow-2xl p-10 rounded-[3rem] bg-white/80 backdrop-blur-xl">
+               <div className="mb-10">
+                 <h3 className="text-2xl font-black tracking-tight text-slate-800">Entity Proficiency Matrix</h3>
+                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Granular comparative analysis of individual student performance</p>
+               </div>
+               
+               <div className="h-[400px] w-full">
+                 <ResponsiveContainer width="100%" height="100%">
+                   <BarChart data={data.filter(d => d.obtained_marks !== null).map(d => ({ name: d.name, score: d.obtained_marks, roll: d.roll_no }))}>
+                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                     <XAxis 
+                       dataKey="name" 
+                       axisLine={false} 
+                       tickLine={false} 
+                       tick={{ fontSize: 9, fontWeight: 700, fill: '#64748b' }}
+                       interval={0}
+                       angle={-45}
+                       textAnchor="end"
+                       height={80}
+                     />
+                     <YAxis 
+                       axisLine={false} 
+                       tickLine={false} 
+                       tick={{ fontSize: 10, fontWeight: 900, fill: '#94a3b8' }} 
+                     />
+                     <Tooltip 
+                       contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)', padding: '12px' }}
+                       labelFormatter={(value) => `Entity: ${value}`}
+                     />
+                     <Bar dataKey="score" radius={[6, 6, 0, 0]} barSize={40}>
+                       {data.filter(d => d.obtained_marks !== null).map((entry, index) => (
+                         <Cell key={`cell-${index}`} fill={entry.obtained_marks / (data[0]?.total_marks || 100) > 0.75 ? '#10B981' : entry.obtained_marks / (data[0]?.total_marks || 100) > 0.4 ? '#3B82F6' : '#E63939'} fillOpacity={0.8} />
+                       ))}
+                     </Bar>
+                   </BarChart>
+                 </ResponsiveContainer>
+               </div>
+            </Card>
+          </motion.div>
+
+          <motion.div 
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="grid grid-cols-1 gap-8"
+          >
+            <Card className="glass-card border-none shadow-2xl p-10 rounded-[3rem] bg-white/80 backdrop-blur-xl">
+               <div className="flex flex-col md:flex-row gap-12 items-center">
+                  <div className="flex-1 space-y-6">
+                    <div>
+                      <h3 className="text-2xl font-black tracking-tight text-slate-800">Grade Archetypes</h3>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Categorical classification of neural scores</p>
+                    </div>
+                    <div className="space-y-4">
+                       {analytics.grades.map((g, i) => (
+                         <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50/50 border border-slate-100">
+                            <div className="flex items-center gap-4">
+                               <div className="w-3 h-3 rounded-full" style={{ backgroundColor: g.fill }} />
+                               <span className="text-sm font-bold text-slate-700">{g.name}</span>
+                            </div>
+                            <span className="text-sm font-black text-slate-900">{Math.round((g.value / data.filter(d => d.obtained_marks !== null).length) * 100)}%</span>
+                         </div>
+                       ))}
+                    </div>
+                  </div>
+                  <div className="w-full md:w-[400px] h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={analytics.grades}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={100}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {analytics.grades.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.fill} />
+                          ))}
+                        </Pie>
+                        <Tooltip 
+                          contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)' }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+               </div>
+            </Card>
+          </motion.div>
+        </div>
+      )}
+
       <Card className="glass-card border-none shadow-2xl p-10 rounded-[3.5rem] overflow-hidden">
         <div className="flex flex-col md:flex-row items-stretch gap-8 mb-16 px-2">
           <div className="flex-1 space-y-3">
             <label className="text-[10px] font-black uppercase tracking-[0.4em] text-red-500 pl-1">Target Node (Class)</label>
-            <Select onValueChange={handleClassChange}>
-              <SelectTrigger className="h-16 rounded-[1.5rem] border-red-100 font-bold bg-white focus:ring-[#E63939]/20 shadow-sm">
-                <SelectValue placeholder="Select Class" />
+            <Select value={selectedClass} onValueChange={handleClassChange}>
+              <SelectTrigger className="h-16 rounded-[1.5rem] border-red-100 font-bold bg-white focus:ring-[#E63939]/20 shadow-sm px-6">
+                 <Layers className="text-red-300 mr-3" size={18} />
+                 <SelectValue placeholder="Select Class" />
               </SelectTrigger>
               <SelectContent className="rounded-2xl border-none shadow-2xl">
                 {classes.map(c => <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>)}
@@ -264,9 +609,10 @@ export default function Marksheets() {
 
           <div className="flex-1 space-y-3">
             <label className="text-[10px] font-black uppercase tracking-[0.4em] text-red-500 pl-1">Analysis Focus (Subject)</label>
-            <Select onValueChange={fetchMarksheet} disabled={!selectedClass}>
-              <SelectTrigger className="h-16 rounded-[1.5rem] border-red-100 font-bold bg-white disabled:opacity-40 shadow-sm">
-                <SelectValue placeholder="Select Subject" />
+            <Select value={selectedSubject} onValueChange={fetchMarksheet} disabled={!selectedClass}>
+              <SelectTrigger className="h-16 rounded-[1.5rem] border-red-100 font-bold bg-white disabled:opacity-40 shadow-sm px-6">
+                 <BookOpen className="text-red-300 mr-3" size={18} />
+                 <SelectValue placeholder="Select Subject" />
               </SelectTrigger>
               <SelectContent className="rounded-2xl border-none shadow-2xl">
                 {subjects.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>)}
@@ -334,7 +680,7 @@ export default function Marksheets() {
                           <span className="text-xs font-black text-slate-400 uppercase tracking-widest">/ {stu.total_marks}</span>
                         </div>
                         <div className="w-24 h-1 bg-slate-100 rounded-full mt-3 overflow-hidden">
-                           <div className={`h-full ${stu.obtained_marks / stu.total_marks > 0.7 ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${(stu.obtained_marks / stu.total_marks) * 100}%` }} />
+                           <div className={`h-full ${stu.total_marks > 0 && stu.obtained_marks / stu.total_marks > 0.7 ? 'bg-emerald-500' : 'bg-red-500'}`} style={{ width: `${stu.total_marks > 0 ? (stu.obtained_marks / stu.total_marks) * 100 : 0}%` }} />
                         </div>
                       </div>
                     ) : (
@@ -392,7 +738,15 @@ export default function Marksheets() {
           <DialogHeader className="sr-only">
             <DialogTitle>Evaluation Report for {selectedReport?.student?.name}</DialogTitle>
           </DialogHeader>
-          <div className="absolute top-6 right-16 z-20">
+          <div className="absolute top-6 right-16 z-20 flex gap-2">
+             <Button 
+               variant="outline" 
+               size="sm" 
+               onClick={previewReportPDF}
+               className="h-10 rounded-xl gap-2 font-bold text-primary border-primary/20 bg-primary/5 hover:bg-primary/10 shadow-sm"
+             >
+                <Search size={14} /> Full Preview
+             </Button>
              <Button 
                variant="outline" 
                size="sm" 
@@ -408,12 +762,12 @@ export default function Marksheets() {
                 <div className="flex justify-between items-start border-b border-slate-50 pb-12">
                    <div className="space-y-4 text-left">
                       <Badge className="bg-primary text-white border-none uppercase font-black tracking-[0.5em] text-[8px] py-1.5 px-4 rounded-full">Retrieved Evaluation Node</Badge>
-                      <h2 className="text-6xl font-black tracking-tighter text-slate-800 leading-[0.9]">
+                      <h2 className="text-6xl font-black tracking-tight text-slate-800 leading-tight">
                         {selectedReport.student.name}
                       </h2>
                       <div className="flex gap-8 text-[10px] font-black text-slate-400 uppercase tracking-widest pt-2">
                         <span>Roll: {selectedReport.student.roll_no}</span>
-                        <span>Date: {new Date(selectedReport.student.created_at).toLocaleDateString()}</span>
+                        <span>Date: {selectedReport.student.created_at ? new Date(selectedReport.student.created_at).toLocaleDateString() : 'N/A'}</span>
                       </div>
                    </div>
                    <div className="text-center p-8 bg-slate-50 rounded-[2.5rem] border border-slate-100 min-w-[140px]">
@@ -483,6 +837,46 @@ export default function Marksheets() {
               </div>
             )}
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <DialogContent className="max-w-5xl h-[90vh] p-0 overflow-hidden bg-slate-900 border-none rounded-[3rem] shadow-4xl flex flex-col z-[100]">
+          <DialogHeader className="p-8 border-b border-white/5 bg-slate-900 text-white shrink-0">
+            <div className="flex justify-between items-center w-full">
+              <div>
+                <DialogTitle className="text-2xl font-black">Report Archive Preview</DialogTitle>
+                <DialogDescription className="text-xs text-white/40 uppercase tracking-widest mt-1">High-fidelity PDF document stream</DialogDescription>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={downloadReportPDF}
+                className="rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10 gap-2"
+              >
+                <Download size={14} /> Download Archive
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="flex-1 w-full bg-slate-800 flex items-center justify-center relative">
+             {previewUrl ? (
+               <iframe 
+                 src={`${previewUrl}#toolbar=0&navpanes=0&scrollbar=0`} 
+                 className="absolute inset-0 w-full h-full border-none bg-white" 
+                 title="PDF Archive" 
+               />
+             ) : (
+                <div className="text-white/20 flex flex-col items-center gap-4">
+                  <AlertCircle size={80} />
+                  <p className="font-black uppercase tracking-widest">No Buffer Stream Detected</p>
+                </div>
+             )}
+          </div>
+          <div className="p-6 bg-slate-900 border-t border-white/5 flex justify-end shrink-0">
+             <Button onClick={() => setIsPreviewOpen(false)} className="rounded-xl px-10 font-bold bg-white text-slate-900 hover:bg-slate-200">
+               Terminate Preview
+             </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

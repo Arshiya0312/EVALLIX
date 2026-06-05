@@ -231,40 +231,28 @@ const upload = multer({ storage: storage });
 
 export const app = express();
 
-async function startServer() {
-  console.log("Starting server setup...");
-  try {
-    await setupDb();
-    console.log("Database synced successfully.");
-  } catch (err) {
-    console.error("Database sync failed:", err);
-    // In Vercel, we don't want to process.exit(1) as it might kill the instance prematurely
-    if (!process.env.VERCEL) {
-      process.exit(1);
-    }
-  }
-  
-  app.set('trust proxy', true);
-  app.use(express.json());
+app.set('trust proxy', true);
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-  // OAuth & Auth Middleware
-  const authenticate = (req: any, res: any, next: any) => {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      req.user = decoded;
-      next();
-    } catch (err) {
-      // Special handle for demo token if we still have it in old sessions
-      if (token === 'demo-token-smarteval') {
-        req.user = { id: 1, email: 'pilot@smarteval.ai', name: 'Faculty Pilot' };
-        return next();
-      }
-      res.status(401).json({ error: "Invalid session" });
+// OAuth & Auth Middleware
+const authenticate = (req: any, res: any, next: any) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+  const token = authHeader.split(' ')[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (err) {
+    // Special handle for demo token if we still have it in old sessions
+    if (token === 'demo-token-smarteval') {
+      req.user = { id: 'pilot', email: 'pilot@smarteval.ai', name: 'Faculty Pilot' };
+      return next();
     }
-  };
+    res.status(401).json({ error: "Invalid session" });
+  }
+};
 
 app.get("/api/health", (req, res) => res.json({ status: "neural_link_established", timestamp: new Date().toISOString() }));
 
@@ -513,21 +501,27 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
     const subjectId = String(req.params.id);
     const files = req.files as any;
     
-    console.log(`Material upload request for subject: ${subjectId} by faculty: ${facultyId}`);
+    console.log(`Material upload/sync request for subject: ${subjectId} by faculty: ${facultyId}`);
     
-    if (!files || Object.keys(files).length === 0) {
-      console.warn("No files received in material upload request");
-      return res.status(400).json({ error: "No files uploaded" });
-    }
-
     const updates: any = {};
-    if (files.textbook) {
-      updates.textbook_url = files.textbook[0].originalname;
-      console.log(`Textbook received: ${updates.textbook_url} (${files.textbook[0].size} bytes)`);
-    }
-    if (files.notes) {
-      updates.notes_url = files.notes[0].originalname;
-      console.log(`Notes received: ${updates.notes_url} (${files.notes[0].size} bytes)`);
+    
+    // Support JSON body for filename registration (avoids payload limits for textbooks)
+    if (req.body.filename && req.body.type) {
+      const typeKey = req.body.type === 'textbook' ? 'textbook_url' : 'notes_url';
+      updates[typeKey] = req.body.filename;
+      console.log(`Neural registration (JSON) for ${req.body.type}: ${req.body.filename}`);
+    } else if (files && Object.keys(files).length > 0) {
+      if (files.textbook) {
+        updates.textbook_url = files.textbook[0].originalname;
+        console.log(`Textbook received: ${updates.textbook_url} (${files.textbook[0].size} bytes)`);
+      }
+      if (files.notes) {
+        updates.notes_url = files.notes[0].originalname;
+        console.log(`Notes received: ${updates.notes_url} (${files.notes[0].size} bytes)`);
+      }
+    } else {
+      console.warn("No material markers found in request payload");
+      return res.status(400).json({ error: "No materials or filenames detected in sync request" });
     }
     
     try {
@@ -991,6 +985,7 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
     res.json({ success: true });
   }));
 
+async function setupVite() {
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
@@ -1002,6 +997,18 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
+  }
+}
+
+setupVite();
+
+async function startServer() {
+  console.log("Starting server setup...");
+  try {
+    await setupDb();
+    console.log("Database synced successfully.");
+  } catch (err) {
+    console.error("Database sync failed:", err);
   }
 
   if (!process.env.VERCEL) {

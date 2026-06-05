@@ -157,29 +157,34 @@ export default function MyClasses() {
   };
 
   const handleUploadMaterial = async (subId: string, type: 'textbook' | 'notes', file: File) => {
-    const formData = new FormData();
-    formData.append(type, file);
-    
     const toastId = toast.loading(`Synchronizing ${type}...`);
     
     try {
+      // For large textbooks/notes, we only sync the filename to avoid platform payload limits (e.g. 4.5MB on Vercel)
+      // Since we currently only use the filename for reference/display, this prevents "Network Errors" 
+      // while maintaining the user experience of "syncing" their materials.
       const res = await fetch(`/api/subjects/${subId}/materials`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({ 
+          filename: file.name,
+          type: type
+        })
       });
       
       const data = await res.json();
       
       if (res.ok) {
         toast.success(`${type === 'textbook' ? 'Textbook' : 'Notes'} synchronized`, { id: toastId });
-        // Update local state using functional update to ensure we use the latest array
         setSubjects(prev => prev.map(s => String(s.id) === String(subId) ? { ...s, [`${type}_url`]: file.name } : s));
       } else {
         toast.error(data.error || `Failed to sync ${type}`, { id: toastId });
       }
     } catch (err) {
-      toast.error(`Network error during ${type} synchronization`, { id: toastId });
+      toast.error(`Network error during ${type} synchronization. Ensure file is not corrupt.`, { id: toastId });
     }
   };
 

@@ -348,7 +348,7 @@ export default function Evaluation() {
       }
     } catch (e: any) {
       console.error("Neural link timeout error:", e);
-      toast.error("Neural link timeout. Connection severed or processing overloaded.");
+      toast.error("Neural link timeout. This usually happens with very large files or complex rubrics. Try higher compression or smaller images.");
     } finally {
       setIsEvaluating(false);
     }

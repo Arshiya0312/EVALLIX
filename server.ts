@@ -848,8 +848,9 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
           { text: "Evaluate this answer sheet based on the provided question paper and rubric (if applicable). Provide high fidelity marks. Output in raw JSON format matching the schema." }
         ];
 
+        console.log(`Initiating AI evaluation for subject ${subjectId} using model: gemini-3.5-flash`);
         const modelResult = await ai.models.generateContent({
-          model: "gemini-flash-latest",
+          model: "gemini-3.5-flash",
           contents: { parts: parts },
           config: {
             systemInstruction: systemPrompt,
@@ -1012,9 +1013,10 @@ async function startServer() {
   }
 
   if (!process.env.VERCEL) {
-    app.listen(PORT, "0.0.0.0", () => {
+    const server = app.listen(PORT, "0.0.0.0", () => {
       console.log(`Evalix Pro running on port ${PORT}`);
     });
+    server.timeout = 300000; // 5 minutes timeout for large AI processing
   }
 }
 

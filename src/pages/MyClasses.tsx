@@ -159,15 +159,27 @@ export default function MyClasses() {
   const handleUploadMaterial = async (subId: string, type: 'textbook' | 'notes', file: File) => {
     const formData = new FormData();
     formData.append(type, file);
-    const res = await fetch(`/api/subjects/${subId}/materials`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` },
-      body: formData
-    });
-    if (res.ok) {
-      toast.success(`${type === 'textbook' ? 'Textbook' : 'Notes'} synchronized`);
-      // Update local state using functional update to ensure we use the latest array
-      setSubjects(prev => prev.map(s => String(s.id) === String(subId) ? { ...s, [`${type}_url`]: file.name } : s));
+    
+    const toastId = toast.loading(`Synchronizing ${type}...`);
+    
+    try {
+      const res = await fetch(`/api/subjects/${subId}/materials`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData
+      });
+      
+      const data = await res.json();
+      
+      if (res.ok) {
+        toast.success(`${type === 'textbook' ? 'Textbook' : 'Notes'} synchronized`, { id: toastId });
+        // Update local state using functional update to ensure we use the latest array
+        setSubjects(prev => prev.map(s => String(s.id) === String(subId) ? { ...s, [`${type}_url`]: file.name } : s));
+      } else {
+        toast.error(data.error || `Failed to sync ${type}`, { id: toastId });
+      }
+    } catch (err) {
+      toast.error(`Network error during ${type} synchronization`, { id: toastId });
     }
   };
 

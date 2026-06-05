@@ -510,32 +510,56 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
     { name: 'notes', maxCount: 1 }
   ]), wrap(async (req: any, res: any) => {
     const facultyId = req.user.id;
-    const subjectId = req.params.id;
+    const subjectId = String(req.params.id);
     const files = req.files as any;
     
+    console.log(`Material upload request for subject: ${subjectId} by faculty: ${facultyId}`);
+    
+    if (!files || Object.keys(files).length === 0) {
+      console.warn("No files received in material upload request");
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+
     const updates: any = {};
-    if (files.textbook) updates.textbook_url = files.textbook[0].originalname;
-    if (files.notes) updates.notes_url = files.notes[0].originalname;
+    if (files.textbook) {
+      updates.textbook_url = files.textbook[0].originalname;
+      console.log(`Textbook received: ${updates.textbook_url} (${files.textbook[0].size} bytes)`);
+    }
+    if (files.notes) {
+      updates.notes_url = files.notes[0].originalname;
+      console.log(`Notes received: ${updates.notes_url} (${files.notes[0].size} bytes)`);
+    }
     
     try {
       await dbRun(async (db) => {
-        await db.collection("faculty").doc(facultyId).collection("subjects").doc(subjectId).update(updates);
+        const docRef = db.collection("faculty").doc(facultyId).collection("subjects").doc(subjectId);
+        const doc = await docRef.get();
+        if (!doc.exists) {
+          console.warn(`Subject ${subjectId} not found in Firestore for faculty ${facultyId}`);
+          throw new Error("Subject node not found in Firestore");
+        }
+        await docRef.update(updates);
       });
+      console.log(`Firestore updated successfully for subject: ${subjectId}`);
       res.json({ success: true });
     } catch (err: any) {
-      console.error("Material upload failed (Firestore):", err.message);
-      // Attempt to find which class this subject belongs to for the mock key
-      // or just use a generic subjects mock key if it was created during POST
-      // In our app, subjects mock key is subjects_${class_id}
-      // Since we don't have class_id here easily without another query, 
-      // we'll try to find it in all mock subject collections
+      console.error("Material upload database update failed:", err.message);
+      // Attempt to find in mock store
+      let foundInMock = false;
       for (const key in mockStore) {
         if (key.startsWith('subjects_') && mockStore[key][subjectId]) {
           mockStore[key][subjectId] = { ...mockStore[key][subjectId], ...updates };
+          foundInMock = true;
+          console.log(`Updated mock store for subject: ${subjectId} in collection: ${key}`);
           break;
         }
       }
-      res.json({ success: true, warning: "Offline sync active" });
+      
+      if (foundInMock) {
+        res.json({ success: true, warning: "Offline sync active" });
+      } else {
+        res.status(404).json({ error: "Subject synchronization point not found. Try re-creating the subject." });
+      }
     }
   }));
 

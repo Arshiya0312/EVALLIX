@@ -24,7 +24,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { Criterion, UnitRubric, Subject } from '@/types';
 
 interface RubricManagerProps {
-  subjectId: number;
+  subjectId: string;
   onClose: () => void;
   subjectData?: Subject;
 }
@@ -95,7 +95,7 @@ export default function RubricManager({ subjectId, onClose, subjectData }: Rubri
     }
   };
 
-  const deleteRubric = async (id: number) => {
+  const deleteRubric = async (id: string) => {
     try {
       const res = await fetch(`/api/rubrics/${id}`, {
         method: 'DELETE',

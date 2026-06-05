@@ -622,7 +622,7 @@ export default function Evaluation() {
             <AnimatePresence>
               {showRubricManager && selectedSubject && (
                 <RubricManager 
-                  subjectId={parseInt(selectedSubject)} 
+                  subjectId={selectedSubject} 
                   subjectData={subjects.find(s => s.id.toString() === selectedSubject)}
                   onClose={() => {
                     setShowRubricManager(false);

@@ -166,8 +166,8 @@ export default function MyClasses() {
     });
     if (res.ok) {
       toast.success(`${type === 'textbook' ? 'Textbook' : 'Notes'} synchronized`);
-      // Update local state if needed
-      setSubjects(subjects.map(s => s.id.toString() === subId.toString() ? { ...s, [`${type}_url`]: file.name } : s));
+      // Update local state using functional update to ensure we use the latest array
+      setSubjects(prev => prev.map(s => String(s.id) === String(subId) ? { ...s, [`${type}_url`]: file.name } : s));
     }
   };
 

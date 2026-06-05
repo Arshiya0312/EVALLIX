@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { User, Bell, Shield, Palette, Save, Camera, CheckCircle, FileText, Download, LogOut } from 'lucide-react';
+import { User, Bell, Shield, Palette, Save, Camera, CheckCircle, FileText, Download, LogOut, Database, RefreshCw, Archive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -65,6 +65,7 @@ export default function Settings() {
   const tabs = [
     { label: 'Profile Identity', icon: User },
     { label: 'Neural Alerts', icon: Bell },
+    { label: 'Data Integrity', icon: Database },
     { label: 'Access Control', icon: Shield },
     { label: 'Visual Interface', icon: Palette },
     { label: 'System Compliance', icon: FileText },
@@ -139,6 +140,51 @@ export default function Settings() {
 
     doc.save('Evalix_System_Manifest.pdf');
     toast.success("System documentation exported.");
+  };
+
+   const handleMigrate = async () => {
+    toast.loading("Initiating neural data migration...");
+    try {
+      const res = await fetch('/api/admin/migrate', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast.dismiss();
+        toast.success(`Migration Successful. Synced: ${Object.values(data.summary).reduce((a: any, b: any) => a + b, 0)} records.`);
+      } else {
+        toast.dismiss();
+        toast.error("Migration protocol aborted by firewall.");
+      }
+    } catch (e) {
+      toast.dismiss();
+      toast.error("Neural link timeout.");
+    }
+  };
+
+  const handleBackup = async () => {
+    toast.loading("Compiling full localized backup...");
+    try {
+      const res = await fetch('/api/admin/backup', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Evalix_Backup_${new Date().toISOString()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        toast.dismiss();
+        toast.success("Backup archive downloaded successfully.");
+      }
+    } catch (e) {
+      toast.dismiss();
+      toast.error("Backup sequence failed.");
+    }
   };
 
   return (
@@ -242,7 +288,57 @@ export default function Settings() {
              </Card>
            )}
 
-           {activeTab === 'Access Control' && (
+            {activeTab === 'Data Integrity' && (
+              <div className="space-y-8">
+                <Card className="glass-card border-none rounded-[3rem] overflow-hidden">
+                  <CardHeader className="p-10">
+                    <CardTitle className="text-3xl font-black tracking-tight text-slate-800 dark:text-white italic">Neural Data Management</CardTitle>
+                    <CardDescription className="font-bold text-slate-500 uppercase text-[10px] tracking-widest mt-2">Maintain database health and perform systemic backups.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-10 space-y-12">
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="p-10 rounded-[2.5rem] bg-emerald-500/5 border border-emerald-500/10 flex flex-col gap-6">
+                           <div className="w-16 h-16 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                              <RefreshCw size={32} />
+                           </div>
+                           <div>
+                              <h4 className="text-xl font-black text-slate-800 dark:text-white mb-2">Structure Migration</h4>
+                              <p className="text-xs text-slate-500 font-bold leading-relaxed mb-6">Ports legacy/temporary records into production clusters and ensures unique identity bindings across the neural web.</p>
+                              <Button onClick={handleMigrate} className="w-full h-14 rounded-2xl bg-emerald-500 hover:bg-emerald-600 font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/10 gap-3">
+                                 <RefreshCw size={18} /> Run Migration Script
+                              </Button>
+                           </div>
+                        </div>
+
+                        <div className="p-10 rounded-[2.5rem] bg-primary/5 border border-primary/10 flex flex-col gap-6">
+                           <div className="w-16 h-16 rounded-2xl bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/20">
+                              <Archive size={32} />
+                           </div>
+                           <div>
+                              <h4 className="text-xl font-black text-slate-800 dark:text-white mb-2">Production Export</h4>
+                              <p className="text-xs text-slate-500 font-bold leading-relaxed mb-6">Generates a complete JSON snapshot of your faculty profile, student roster, and evaluation history for secure archiving.</p>
+                              <Button onClick={handleBackup} className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/10 gap-3">
+                                 <Download size={18} /> Download Local Backup
+                              </Button>
+                           </div>
+                        </div>
+                     </div>
+
+                     <div className="p-8 rounded-[2rem] bg-slate-50 border border-slate-100 flex items-start gap-4">
+                        <div className="p-3 bg-white rounded-xl shadow-sm text-amber-500">
+                           <Shield size={20} />
+                        </div>
+                        <div>
+                           <h5 className="text-sm font-black text-slate-800 mb-1">Data Integrity Protocol</h5>
+                           <p className="text-[10px] font-bold text-slate-500 leading-relaxed uppercase tracking-wide">Automatic background preservation is active. Your student roster and evaluation states are periodically mirrored to localized storage to prevent data loss during heavy operations.</p>
+                        </div>
+                     </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {activeTab === 'Access Control' && (
              <Card className="glass-card border-none rounded-[3rem] overflow-hidden">
                <CardHeader className="p-10">
                  <CardTitle className="text-3xl font-black tracking-tight text-slate-800 dark:text-white italic">Access Control</CardTitle>

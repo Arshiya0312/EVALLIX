@@ -1,12 +1,12 @@
 export interface Faculty {
-  id: number;
+  id: string;
   email: string;
   name: string;
   photo?: string;
 }
 
 export interface Class {
-  id: number;
+  id: string;
   name: string;
   semester: string;
   year: string;
@@ -14,7 +14,7 @@ export interface Class {
 }
 
 export interface Student {
-  id: number;
+  id: string;
   roll_no: string;
   name: string;
 }
@@ -38,7 +38,7 @@ export interface EvaluationResult {
 }
 
 export interface Subject {
-  id: number;
+  id: string;
   name: string;
   textbook_url?: string;
   notes_url?: string;
@@ -56,8 +56,8 @@ export interface QuestionNode {
 }
 
 export interface UnitRubric {
-  id?: number;
-  subject_id: number;
+  id?: string;
+  subject_id: string;
   name: string;
   type: 'unit' | 'question';
   criteria: Criterion[] | { [question_id: string]: QuestionNode };

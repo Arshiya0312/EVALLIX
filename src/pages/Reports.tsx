@@ -154,48 +154,73 @@ export default function Marksheets() {
     const element = document.getElementById('report-content-dialog');
     if (!element) return;
     
-    toast.loading("Compiling neural archive...");
+    toast.loading("Optimizing neural archive for A4 printing...");
     
     try {
+      // Precision A4 settings
+      const pdf = new jsPDF({
+        orientation: 'p',
+        unit: 'mm',
+        format: 'a4'
+      });
+
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
         logging: false,
-        width: 1000,
+        width: 1000, // Fixed width for consistent scaling
         backgroundColor: '#ffffff',
         onclone: (clonedDoc) => {
           const frame = clonedDoc.getElementById('report-content-dialog');
           if (frame) {
-            frame.style.width = '1000px';
+            frame.style.width = '210mm'; // Force A4 width
+            frame.style.padding = '15mm';
             frame.style.height = 'auto';
             frame.style.overflow = 'visible';
+            
+            // Apply print-specific structural adjustments
             const viewports = frame.querySelectorAll('[data-radix-scroll-area-viewport]');
             viewports.forEach(vp => {
               (vp as HTMLElement).style.height = 'auto';
               (vp as HTMLElement).style.overflow = 'visible';
               (vp as HTMLElement).style.display = 'block';
             });
+
+            // Ensure charts don't break strangely
+            const charts = frame.querySelectorAll('.recharts-responsive-container');
+            charts.forEach(chart => {
+              (chart as HTMLElement).style.pageBreakInside = 'avoid';
+            });
           }
         }
       });
 
       const imgData = canvas.toDataURL('image/png');
-      const imgProps = (new jsPDF()).getImageProperties(imgData);
-      const pdfWidth = 210; // A4 standard width in mm
-      const scaledImgHeight = (imgProps.height * pdfWidth) / imgProps.width;
-
-      const pdf = new jsPDF({
-        orientation: 'p',
-        unit: 'mm',
-        format: [pdfWidth, scaledImgHeight]
-      });
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
       
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, scaledImgHeight);
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // First page
+      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+      heightLeft -= pdfHeight;
+
+      // Multi-page handling
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
+        heightLeft -= pdfHeight;
+      }
       
       pdf.save(`Evaluation_Report_${selectedReport?.student?.roll_no}.pdf`);
       toast.dismiss();
       toast.success("Identity profile archive exported.");
     } catch (e) {
+      console.error("PDF Export Error:", e);
       toast.dismiss();
       toast.error("Export failed. Memory overload.");
     }
@@ -758,8 +783,37 @@ export default function Marksheets() {
           </div>
           <ScrollArea className="h-[80vh]">
             {selectedReport && (
-              <div id="report-content-dialog" className="p-12 space-y-12 bg-white">
-                <div className="flex justify-between items-start border-b border-slate-50 pb-12">
+              <div id="report-content-dialog" className="p-12 space-y-12 bg-white print:p-0">
+                <style dangerouslySetInnerHTML={{ __html: `
+                  @media print {
+                    @page { 
+                      size: A4; 
+                      margin: 15mm; 
+                    }
+                    body { 
+                      background: white; 
+                    }
+                    #report-content-dialog {
+                      width: 210mm !important;
+                      margin: 0 !important;
+                      padding: 0 !important;
+                      box-shadow: none !important;
+                    }
+                    .no-print {
+                      display: none !important;
+                    }
+                    .page-break-avoid {
+                      page-break-inside: avoid;
+                      break-inside: avoid;
+                    }
+                    .page-break-after {
+                      page-break-after: always;
+                      break-after: page;
+                    }
+                  }
+                `}} />
+                
+                <div className="flex justify-between items-start border-b border-slate-50 pb-12 page-break-avoid">
                    <div className="space-y-4 text-left">
                       <Badge className="bg-primary text-white border-none uppercase font-black tracking-[0.5em] text-[8px] py-1.5 px-4 rounded-full">Retrieved Evaluation Node</Badge>
                       <h2 className="text-6xl font-black tracking-tight text-slate-800 leading-tight">
@@ -779,7 +833,7 @@ export default function Marksheets() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
                    <div className="space-y-8 text-left">
-                      <div className="p-10 rounded-[3rem] bg-primary/[0.03] border border-primary/5">
+                      <div className="p-10 rounded-[3rem] bg-primary/[0.03] border border-primary/5 page-break-avoid">
                          <h3 className="text-[10px] font-black uppercase tracking-[0.5em] text-primary mb-8 flex items-center gap-3">
                             <BrainCircuit size={18} /> Evaluation Synthesis
                          </h3>
@@ -787,7 +841,7 @@ export default function Marksheets() {
                       </div>
 
                       <div className="grid grid-cols-1 gap-6">
-                         <div className="p-8 rounded-[2.5rem] bg-emerald-500/5 border border-emerald-500/10">
+                         <div className="p-8 rounded-[2.5rem] bg-emerald-500/5 border border-emerald-500/10 page-break-avoid">
                             <h4 className="text-[9px] font-black uppercase tracking-[0.4em] text-emerald-600 mb-6 flex items-center gap-2">
                                <TrendingUp size={16} /> Cognitive Strengths
                             </h4>
@@ -800,7 +854,7 @@ export default function Marksheets() {
                                ))}
                             </ul>
                          </div>
-                         <div className="p-8 rounded-[2.5rem] bg-amber-500/5 border border-amber-500/10">
+                         <div className="p-8 rounded-[2.5rem] bg-amber-500/5 border border-amber-500/10 page-break-avoid">
                             <h4 className="text-[9px] font-black uppercase tracking-[0.4em] text-amber-600 mb-6 flex items-center gap-2">
                                <AlertCircle size={16} /> Critical Gaps
                             </h4>
@@ -820,7 +874,7 @@ export default function Marksheets() {
                       <h3 className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-400">Forensic Question Matrix</h3>
                       <div className="space-y-4">
                         {selectedReport.questions.map((q: any, i: number) => (
-                          <div key={i} className="p-6 rounded-[2rem] border border-slate-100 bg-slate-50/50 flex flex-col gap-4">
+                          <div key={i} className="p-6 rounded-[2rem] border border-slate-100 bg-slate-50/50 flex flex-col gap-4 page-break-avoid">
                              <div className="flex justify-between items-center">
                                <span className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-black text-primary border border-slate-100 shadow-sm">{q.q_no}</span>
                                <div className="font-black text-slate-800 flex items-baseline gap-1">

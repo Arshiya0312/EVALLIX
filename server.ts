@@ -229,6 +229,8 @@ async function setupDb() {
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+export const app = express();
+
 async function startServer() {
   console.log("Starting server setup...");
   try {
@@ -236,10 +238,12 @@ async function startServer() {
     console.log("Database synced successfully.");
   } catch (err) {
     console.error("Database sync failed:", err);
-    process.exit(1);
+    // In Vercel, we don't want to process.exit(1) as it might kill the instance prematurely
+    if (!process.env.VERCEL) {
+      process.exit(1);
+    }
   }
   
-  const app = express();
   app.set('trust proxy', true);
   app.use(express.json());
 
@@ -350,7 +354,7 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
 
         const evaluationsSnap = await facultyRef.collection("evaluations")
           .orderBy("created_at", "desc")
-          .limit(50)
+          .limit(100)
           .get();
           
         const evaluations = evaluationsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -359,25 +363,45 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
         const evaluationsToday = evaluations.filter(e => e.created_at >= todayStr).length;
 
         let totalPerformance = 0;
+        let performanceCount = 0;
         evaluations.forEach(data => {
           if (data.total_marks > 0) {
             totalPerformance += (data.obtained_marks / data.total_marks);
+            performanceCount++;
           }
         });
-        const avgPerformance = evaluations.length > 0 ? (totalPerformance / evaluations.length) * 100 : 0;
+        const avgPerformance = performanceCount > 0 ? (totalPerformance / performanceCount) * 100 : 0;
 
-        // Fetch student names for recent activity
-        const recentEvaluations = evaluations.slice(0, 5);
-        const enrichedActivity = await Promise.all(recentEvaluations.map(async (e: any) => {
-          const studentDoc = await facultyRef.collection("students").doc(e.student_id).get();
-          const subjectDoc = await facultyRef.collection("subjects").doc(e.subject_id).get();
+        // Fetch names for recent activity with optimized lookup
+        const recentEvaluations = evaluations.slice(0, 10);
+        
+        // Use batch lookups for performance
+        const studentIds = [...new Set(recentEvaluations.map(e => e.student_id))];
+        const subjectIds = [...new Set(recentEvaluations.map(e => e.subject_id))];
+        
+        const studentMap = new Map();
+        const subjectMap = new Map();
+        
+        if (studentIds.length > 0) {
+          const studentDocs = await Promise.all(studentIds.map(id => facultyRef.collection("students").doc(id).get()));
+          studentDocs.forEach(d => { if (d.exists) studentMap.set(d.id, d.data()); });
+        }
+        
+        if (subjectIds.length > 0) {
+          const subjectDocs = await Promise.all(subjectIds.map(id => facultyRef.collection("subjects").doc(id).get()));
+          subjectDocs.forEach(d => { if (d.exists) subjectMap.set(d.id, d.data()); });
+        }
+
+        const enrichedActivity = recentEvaluations.map((e: any) => {
+          const s = studentMap.get(e.student_id);
+          const sub = subjectMap.get(e.subject_id);
           return {
             ...e,
-            student_name: studentDoc.exists ? studentDoc.data()?.name : "Unknown Student",
-            subject_name: subjectDoc.exists ? subjectDoc.data()?.name : "Unknown Subject",
-            roll_no: studentDoc.exists ? studentDoc.data()?.roll_no : "??"
+            student_name: s ? s.name : "Unknown Student",
+            subject_name: sub ? sub.name : "Unknown Subject",
+            roll_no: s ? s.roll_no : "??"
           };
-        }));
+        });
 
         return {
           classes: totalClasses,
@@ -390,6 +414,7 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
 
       res.json(stats);
     } catch (err) {
+      console.error("Stats Error:", err);
       res.json({ classes: 0, subjects: 0, evaluationsToday: 0, performance: 0, recentActivity: [] });
     }
   }));
@@ -409,8 +434,6 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
     if (!name) return res.status(400).json({ error: "Name is required" });
     
     const mockKey = `classes_${req.user.id}`;
-    const tempId = `temp_${Date.now()}`;
-    const newClass = { id: tempId, name, semester: semester || "", year: year || "", section: section || "", faculty_id: req.user.id, created_at: new Date().toISOString() };
 
     try {
       const result = await dbRun(async (db) => {
@@ -418,16 +441,25 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
         // Ensure parent doc exists
         await facultyRef.set({ id: req.user.id, updated_at: new Date().toISOString() }, { merge: true });
         
+        const newClass = { 
+          name, 
+          semester: semester || "", 
+          year: year || "", 
+          section: section || "", 
+          faculty_id: req.user.id, 
+          created_at: new Date().toISOString() 
+        };
         const docRef = await facultyRef.collection("classes").add(newClass);
-        return { ...newClass, id: docRef.id };
+        return { id: docRef.id, ...newClass };
       });
       res.json(result);
     } catch (err: any) {
       console.error("Class creation failed (Firestore):", err);
-      // Persist in session-only mock store
+      const tempId = `temp_${Date.now()}`;
+      const newClassLocal = { id: tempId, name, semester: semester || "", year: year || "", section: section || "", faculty_id: req.user.id, created_at: new Date().toISOString() };
       const store = getMockCollection(mockKey);
-      store[tempId] = newClass;
-      res.status(201).json({ ...newClass, warning: "Stored locally for this session" });
+      store[tempId] = newClassLocal;
+      res.status(201).json({ ...newClassLocal, warning: "Local instance created" });
     }
   }));
 
@@ -447,8 +479,6 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
     if (!name) return res.status(400).json({ error: "Name is required" });
     
     const mockKey = `subjects_${req.params.id}`;
-    const tempId = `temp_sub_${Date.now()}`;
-    const newSub = { id: tempId, class_id: req.params.id, name, created_at: new Date().toISOString() };
 
     try {
       const result = await dbRun(async (db) => {
@@ -456,15 +486,22 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
         // Ensure parent doc exists
         await facultyRef.set({ id: req.user.id, last_sub_at: new Date().toISOString() }, { merge: true });
         
+        const newSub = { 
+          class_id: req.params.id, 
+          name, 
+          created_at: new Date().toISOString() 
+        };
         const docRef = await facultyRef.collection("subjects").add(newSub);
-        return { ...newSub, id: docRef.id };
+        return { id: docRef.id, ...newSub };
       });
       res.json(result);
     } catch (err: any) {
       console.error("Subject creation failed (Firestore):", err);
+      const tempId = `temp_sub_${Date.now()}`;
+      const newSubLocal = { id: tempId, class_id: req.params.id, name, created_at: new Date().toISOString() };
       const store = getMockCollection(mockKey);
-      store[tempId] = newSub;
-      res.status(201).json({ ...newSub, warning: "Stored locally" });
+      store[tempId] = newSubLocal;
+      res.status(201).json({ ...newSubLocal, warning: "Stored locally" });
     }
   }));
 
@@ -517,13 +554,10 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
     const { roll_no, name } = req.body;
     const facultyId = req.user.id;
     const classId = req.params.id;
-    const mockKey = `students_${classId}`;
 
     if (!roll_no) return res.status(400).json({ error: "Roll no is required" });
     
-    const tempId = `temp_stu_${Date.now()}`;
-    const newStudent = { id: tempId, class_id: classId, roll_no, name, created_at: new Date().toISOString() };
-
+    // Use proper document creation to avoid temp IDs on successful writes
     try {
       const result = await dbRun(async (db) => {
         const facultyRef = db.collection("faculty").doc(facultyId);
@@ -536,18 +570,145 @@ app.get("/api/health", (req, res) => res.json({ status: "neural_link_established
           throw { code: 'ALREADY_EXISTS', message: "Student roll no already exists in this class" };
         }
 
+        const newStudent = { 
+          class_id: classId, 
+          roll_no, 
+          name: name || "Anonymous", 
+          created_at: new Date().toISOString() 
+        };
         const docRef = await facultyRef.collection("students").add(newStudent);
-        return { ...newStudent, id: docRef.id };
+        return { id: docRef.id, ...newStudent };
       });
       res.json(result);
     } catch (err: any) {
       if (err.code === 'ALREADY_EXISTS') return res.status(400).json({ error: err.message });
       console.error("Student registration failed (Firestore):", err.message);
       
-      const store = getMockCollection(mockKey);
-      store[tempId] = newStudent;
-      res.status(201).json({ ...newStudent, warning: "Stored locally" });
+      const tempId = `temp_stu_${Date.now()}`;
+      const newStudentLocal = { id: tempId, class_id: classId, roll_no, name: name || "Anonymous", created_at: new Date().toISOString() };
+      const store = getMockCollection(`students_${classId}`);
+      store[tempId] = newStudentLocal;
+      res.status(201).json({ ...newStudentLocal, warning: "Offline backup active" });
     }
+  }));
+
+  // BULK IMPORT ENDPOINT
+  app.post("/api/classes/:id/students/bulk", authenticate, wrap(async (req: any, res: any) => {
+    const classId = req.params.id;
+    const { students } = req.body;
+    const facultyId = req.user.id;
+
+    if (!Array.isArray(students)) return res.status(400).json({ error: "Invalid student list" });
+
+    const result = await dbRun(async (db) => {
+      const facultyRef = db.collection("faculty").doc(facultyId);
+      const studentColl = facultyRef.collection("students");
+      
+      // Check existing students to prevent duplicates
+      const existingSnap = await studentColl.where("class_id", "==", classId).get();
+      const existingRolls = new Set(existingSnap.docs.map(d => d.data().roll_no));
+      
+      const toAdd = students.filter(s => s.roll_no && !existingRolls.has(s.roll_no));
+      
+      if (toAdd.length === 0) return { imported: 0, skipped: students.length };
+
+      const batch = db.batch();
+      const addedStudents: any[] = [];
+
+      toAdd.forEach(s => {
+        const studentRef = studentColl.doc();
+        const data = {
+          class_id: classId,
+          roll_no: s.roll_no.toString(),
+          name: s.name || "Unknown",
+          created_at: new Date().toISOString()
+        };
+        batch.set(studentRef, data);
+        addedStudents.push({ id: studentRef.id, ...data });
+      });
+
+      await batch.commit();
+      return { imported: addedStudents.length, skipped: students.length - addedStudents.length };
+    });
+
+    res.json(result);
+  }));
+
+  // DATA INTEGRITY & MIGRATION ENDPOINT
+  app.post("/api/admin/migrate", authenticate, wrap(async (req: any, res: any) => {
+    // Only allow for current faculty profile
+    const facultyId = req.user.id;
+
+    const migrationResult = await dbRun(async (db) => {
+      const facultyRef = db.collection("faculty").doc(facultyId);
+      const collections = ["classes", "subjects", "students", "evaluations", "rubrics"];
+      const summary: any = {};
+
+      for (const collName of collections) {
+        const snap = await facultyRef.collection(collName).get();
+        let migrated = 0;
+
+        const batch = db.batch();
+        let hasChanges = false;
+
+        snap.forEach(doc => {
+          const data = doc.data();
+          let needsUpdate = false;
+          
+          // 1. Identify temp IDs or numeric IDs stored as fields
+          if (doc.id.startsWith("temp_")) {
+            const newRef = facultyRef.collection(collName).doc();
+            batch.set(newRef, { ...data });
+            batch.delete(doc.ref);
+            needsUpdate = true;
+            migrated++;
+          }
+
+          // 2. Ensure all related IDs are strings (class_id, subject_id, etc.)
+          const idFields = ["class_id", "subject_id", "student_id", "faculty_id"];
+          idFields.forEach(f => {
+            if (data[f] !== undefined && typeof data[f] !== "string") {
+              data[f] = String(data[f]);
+              needsUpdate = true;
+            }
+          });
+
+          if (needsUpdate && !doc.id.startsWith("temp_")) {
+            batch.update(doc.ref, data);
+            migrated++;
+          }
+          
+          if (needsUpdate) hasChanges = true;
+        });
+
+        if (hasChanges) await batch.commit();
+        summary[collName] = migrated;
+      }
+
+      return summary;
+    });
+
+    res.json({ status: "Migration complete", summary: migrationResult });
+  }));
+
+  // BACKUP ENDPOINT
+  app.get("/api/admin/backup", authenticate, wrap(async (req: any, res: any) => {
+    const facultyId = req.user.id;
+    const backup = await dbRun(async (db) => {
+      const facultyRef = db.collection("faculty").doc(facultyId);
+      const collections = ["classes", "subjects", "students", "evaluations", "rubrics"];
+      const fullData: any = {};
+
+      for (const collName of collections) {
+        const snap = await facultyRef.collection(collName).get();
+        fullData[collName] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      }
+      return fullData;
+    });
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename=Evalix_Backup_${facultyId}_${Date.now()}.json`);
+    res.send(JSON.stringify(backup, null, 2));
   }));
 
   app.get("/api/subjects/:id/rubrics", authenticate, wrap(async (req: any, res: any) => {
@@ -806,8 +967,7 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
     res.json({ success: true });
   }));
 
-  // Vite Middleware
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -820,9 +980,13 @@ Adjust question-wise scoring to align with these rubric weights and descriptors.
     app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Evalix Pro running on port ${PORT}`);
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Evalix Pro running on port ${PORT}`);
+    });
+  }
 }
 
 startServer();
+
+export default app;

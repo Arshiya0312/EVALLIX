@@ -35,6 +35,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Class, Subject, Student } from '@/types';
+import BulkImportWizard from '@/components/BulkImportWizard';
 
 export default function MyClasses() {
   const [classes, setClasses] = React.useState<Class[]>([]);
@@ -47,6 +48,7 @@ export default function MyClasses() {
   const [newClass, setNewClass] = React.useState({ name: '', semester: '', year: '', section: '' });
   const [newSub, setNewSub] = React.useState({ name: '' });
   const [newStudent, setNewStudent] = React.useState({ roll_no: '', name: '' });
+  const [showBulkImport, setShowBulkImport] = React.useState(false);
 
   const { token } = useAuth();
 
@@ -426,7 +428,18 @@ export default function MyClasses() {
                              className="h-16 rounded-[1.5rem] border-primary/10 bg-primary/5 dark:bg-primary/10 w-full flex-1" 
                            />
                            <Button onClick={handleAddStudent} className="h-16 rounded-[1.5rem] bg-primary hover:bg-primary/90 font-black w-full md:w-auto px-12 shrink-0 shadow-lg shadow-primary/20">Register</Button>
-                         </div>
+                           
+                           <div className="hidden md:block w-px h-10 bg-primary/10 mx-2" />
+                           
+                           <Button 
+                             variant="outline" 
+                             onClick={() => setShowBulkImport(true)}
+                             className="h-16 rounded-[1.5rem] border-emerald-500/20 bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all font-black px-8 shrink-0 flex items-center gap-3 shadow-lg shadow-emerald-500/5 group"
+                           >
+                              <FileSpreadsheet size={20} className="group-hover:scale-110 transition-transform" />
+                              Bulk Import
+                           </Button>
+                        </div>
 
                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
                             {students.map(stu => (
@@ -492,6 +505,16 @@ export default function MyClasses() {
           </AnimatePresence>
         </div>
       </div>
+
+      {activeClass && (
+        <BulkImportWizard 
+          isOpen={showBulkImport} 
+          onClose={() => setShowBulkImport(false)} 
+          classId={activeClass.id} 
+          onImportSuccess={() => handleSelectClass(activeClass)} 
+          token={token} 
+        />
+      )}
     </div>
   );
 }

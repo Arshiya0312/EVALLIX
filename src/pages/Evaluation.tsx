@@ -61,6 +61,15 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Class, Subject, Student, EvaluationResult, UnitRubric, Criterion } from '@/types';
 import RubricManager from '@/components/RubricManager';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger,
+  DialogDescription,
+  DialogFooter
+} from '@/components/ui/dialog';
 
 const NeuralBackground = () => (
   <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30 dark:opacity-40">
@@ -110,16 +119,6 @@ const NeuralBackground = () => (
     </svg>
   </div>
 );
-
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger,
-  DialogDescription,
-  DialogFooter
-} from '@/components/ui/dialog';
 
 export default function Evaluation() {
   const [classes, setClasses] = React.useState<Class[]>([]);
@@ -278,11 +277,17 @@ export default function Evaluation() {
 
   const handleSubjectChange = async (val: string) => {
     setSelectedSubject(val);
-    const res = await fetch(`/api/subjects/${val}/rubrics`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    if (res.ok) {
-      setUnitRubrics(await res.json());
+    try {
+      const res = await fetch(`/api/subjects/${val}/rubrics`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUnitRubrics(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch rubrics:", err);
+      setUnitRubrics([]);
     }
   };
 
@@ -418,7 +423,11 @@ export default function Evaluation() {
                             <SelectValue placeholder="Select Subject" />
                          </SelectTrigger>
                          <SelectContent className="rounded-[2.5rem] border-none shadow-3xl dark:bg-slate-900 min-w-[200px] p-2">
-                           {subjects.map(s => <SelectItem key={s.id} value={String(s.id)} className="h-12 rounded-xl px-6 font-bold">{s.name}</SelectItem>) || <div className="p-4 text-center text-xs opacity-50">Empty Node</div>}
+                           {subjects.length > 0 ? (
+                             subjects.map(s => <SelectItem key={s.id} value={String(s.id)} className="h-12 rounded-xl px-6 font-bold">{s.name}</SelectItem>)
+                           ) : (
+                             <div className="p-4 text-center text-xs opacity-50 font-bold uppercase tracking-widest">No Subjects Found</div>
+                           )}
                          </SelectContent>
                        </Select>
                     </div>
@@ -431,7 +440,11 @@ export default function Evaluation() {
                              <SelectValue placeholder="Identify Roll No" />
                          </SelectTrigger>
                          <SelectContent className="rounded-[2.5rem] border-none shadow-3xl dark:bg-slate-900 min-w-[200px] p-2">
-                           {students.map(s => <SelectItem key={s.id} value={String(s.id)} className="h-14 rounded-2xl px-6 font-bold truncate">#{s.roll_no} - {s.name}</SelectItem>) || <div className="p-4 text-center text-xs opacity-50">No Entities Found</div>}
+                           {students && students.length > 0 ? (
+                             students.map(s => <SelectItem key={s.id} value={String(s.id)} className="h-14 rounded-2xl px-6 font-bold truncate">#{s.roll_no} - {s.name}</SelectItem>)
+                           ) : (
+                             <div className="p-4 text-center text-xs opacity-50 font-bold uppercase tracking-widest">No Students Found</div>
+                           )}
                          </SelectContent>
                        </Select>
                     </div>

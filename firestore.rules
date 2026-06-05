@@ -1,104 +1,54 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    // Default Deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Helpers
+    // Global Helpers
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function isOwner(facultyId) {
-      return isSignedIn() && request.auth.uid == facultyId;
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // Entity Validations
-    function isValidFaculty(data) {
-      return data.keys().hasAll(['uid', 'email', 'name'])
-        && data.uid is string && data.uid.size() <= 128
-        && data.email is string && data.email.size() <= 256
-        && data.name is string && data.name.size() <= 128;
-    }
-
-    function isValidClass(data) {
-      return data.keys().hasAll(['faculty_id', 'name'])
-        && data.faculty_id is string && data.name is string && data.name.size() <= 128;
-    }
-
-    function isValidSubject(data) {
-      return data.keys().hasAll(['class_id', 'name'])
-        && data.class_id is string && data.name is string && data.name.size() <= 128;
-    }
-
-    function isValidStudent(data) {
-      return data.keys().hasAll(['class_id', 'roll_no'])
-        && data.class_id is string && data.roll_no is string && data.roll_no.size() <= 64;
-    }
-
-    function isValidRubric(data) {
-      return data.keys().hasAll(['subject_id', 'faculty_id', 'name'])
-        && data.subject_id is string && data.faculty_id is string && data.name is string;
-    }
-
-    function isValidEvaluation(data) {
-      return data.keys().hasAll(['student_id', 'subject_id', 'total_marks', 'obtained_marks'])
-        && data.student_id is string && data.subject_id is string && data.total_marks is number && data.obtained_marks is number;
-    }
-
-    // Rules
+    // Faculty Profiles
     match /faculty/{facultyId} {
       allow get: if isOwner(facultyId);
-      allow create: if isOwner(facultyId) && isValidFaculty(incoming());
-      allow update: if isOwner(facultyId) && isValidFaculty(incoming());
-      
-      match /classes/{classId} {
-        allow list, get: if isOwner(facultyId);
-        allow create: if isOwner(facultyId) && isValidClass(incoming()) && isValidId(classId);
-        allow update: if isOwner(facultyId) && isValidClass(incoming()) && isValidId(classId);
-        allow delete: if isOwner(facultyId) && isValidId(classId);
+      allow create: if isOwner(facultyId) 
+                    && request.resource.data.keys().hasAll(['uid', 'name', 'email'])
+                    && request.resource.data.uid == request.auth.uid;
+      allow update: if isOwner(facultyId) 
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'facultyId']);
+    }
+
+    // subjects
+    match /subjects/{subjectId} {
+      allow list: if isSignedIn() && resource.data.facultyId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.facultyId == request.auth.uid;
+      allow create: if isSignedIn() 
+                    && request.resource.data.facultyId == request.auth.uid
+                    && request.resource.data.name is string;
+      allow update: if isSignedIn() 
+                    && resource.data.facultyId == request.auth.uid
+                    && request.resource.data.facultyId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.facultyId == request.auth.uid;
+
+      // Nested Students
+      match /students/{studentRollNo} {
+        allow read, write: if isSignedIn() && get(/databases/$(database)/documents/subjects/$(subjectId)).data.facultyId == request.auth.uid;
       }
 
-      match /subjects/{subjectId} {
-        allow list, get: if isOwner(facultyId);
-        allow create: if isOwner(facultyId) && isValidSubject(incoming()) && isValidId(subjectId);
-        allow update: if isOwner(facultyId) && isValidSubject(incoming()) && isValidId(subjectId);
-        allow delete: if isOwner(facultyId) && isValidId(subjectId);
-      }
-
-      match /students/{studentId} {
-        allow list, get: if isOwner(facultyId);
-        allow create: if isOwner(facultyId) && isValidStudent(incoming()) && isValidId(studentId);
-        allow update: if isOwner(facultyId) && isValidStudent(incoming()) && isValidId(studentId);
-        allow delete: if isOwner(facultyId) && isValidId(studentId);
-      }
-
-      match /rubrics/{rubricId} {
-        allow list, get: if isOwner(facultyId);
-        allow create: if isOwner(facultyId) && isValidRubric(incoming()) && isValidId(rubricId);
-        allow update: if isOwner(facultyId) && isValidRubric(incoming()) && isValidId(rubricId);
-        allow delete: if isOwner(facultyId) && isValidId(rubricId);
-      }
-
+      // Nested Evaluations
       match /evaluations/{evaluationId} {
-        allow list, get: if isOwner(facultyId);
-        allow create: if isOwner(facultyId) && isValidEvaluation(incoming()) && isValidId(evaluationId);
-        allow update: if isOwner(facultyId) && isValidEvaluation(incoming()) && isValidId(evaluationId);
-        allow delete: if isOwner(facultyId) && isValidId(evaluationId);
+        allow read, write: if isSignedIn() && get(/databases/$(database)/documents/subjects/$(subjectId)).data.facultyId == request.auth.uid;
       }
     }
   }

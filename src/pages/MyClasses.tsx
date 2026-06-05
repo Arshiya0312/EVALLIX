@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Plus, 
   MoreVertical, 
@@ -12,9 +12,7 @@ import {
   X,
   FileText,
   ChevronRight,
-  GraduationCap,
-  CheckCircle2,
-  AlertCircle
+  GraduationCap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -35,7 +33,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { Class, Subject, Student } from '@/types';
-import BulkImportWizard from '@/components/BulkImportWizard';
 
 export default function MyClasses() {
   const [classes, setClasses] = React.useState<Class[]>([]);
@@ -48,11 +45,8 @@ export default function MyClasses() {
   const [newClass, setNewClass] = React.useState({ name: '', semester: '', year: '', section: '' });
   const [newSub, setNewSub] = React.useState({ name: '' });
   const [newStudent, setNewStudent] = React.useState({ roll_no: '', name: '' });
-  const [showBulkImport, setShowBulkImport] = React.useState(false);
 
   const { token } = useAuth();
-
-  const [showAddDialog, setShowAddDialog] = React.useState(false);
 
   const fetchData = async () => {
     try {
@@ -63,10 +57,9 @@ export default function MyClasses() {
         const data = await res.json();
         setClasses(Array.isArray(data) ? data : []);
       }
-    } catch (e) {
-      console.warn("Sync classes failed");
-    } finally {
       setLoading(false);
+    } catch (e) {
+      toast.error("Failed to sync classes");
     }
   };
 
@@ -78,49 +71,26 @@ export default function MyClasses() {
 
   const handleCreateClass = async () => {
     if (!newClass.name) return toast.error("Class name is required");
-    setLoading(true);
-    try {
-      const res = await fetch('/api/classes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(newClass)
-      });
-      if (res.ok) {
-        toast.success("Class node initialized");
-        await fetchData();
-        setNewClass({ name: '', semester: '', year: '', section: '' });
-        setShowAddDialog(false);
-      } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || "Failed to create class infrastructure");
-      }
-    } catch (err: any) {
-      toast.error("Network synchronization error");
-    } finally {
-      setLoading(false);
+    const res = await fetch('/api/classes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(newClass)
+    });
+    if (res.ok) {
+      toast.success("Class node initialized");
+      fetchData();
+      setNewClass({ name: '', semester: '', year: '', section: '' });
     }
   };
 
   const handleSelectClass = async (cls: Class) => {
     setActiveClass(cls);
-    setLoading(true);
-    try {
-      const [subRes, stuRes] = await Promise.all([
-        fetch(`/api/classes/${cls.id}/subjects`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`/api/classes/${cls.id}/students`, { headers: { 'Authorization': `Bearer ${token}` } })
-      ]);
-      
-      if (!subRes.ok || !stuRes.ok) throw new Error("Synchronization failed");
-      
-      setSubjects(await subRes.json());
-      setStudents(await stuRes.json());
-    } catch (err) {
-      toast.error("Failed to sync neural nodes for this class");
-      setSubjects([]);
-      setStudents([]);
-    } finally {
-      setLoading(false);
-    }
+    const [subRes, stuRes] = await Promise.all([
+      fetch(`/api/classes/${cls.id}/subjects`, { headers: { 'Authorization': `Bearer ${token}` } }),
+      fetch(`/api/classes/${cls.id}/students`, { headers: { 'Authorization': `Bearer ${token}` } })
+    ]);
+    setSubjects(await subRes.json());
+    setStudents(await stuRes.json());
   };
 
   const handleAddSubject = async () => {
@@ -157,34 +127,17 @@ export default function MyClasses() {
   };
 
   const handleUploadMaterial = async (subId: string, type: 'textbook' | 'notes', file: File) => {
-    const toastId = toast.loading(`Synchronizing ${type}...`);
-    
-    try {
-      // For large textbooks/notes, we only sync the filename to avoid platform payload limits (e.g. 4.5MB on Vercel)
-      // Since we currently only use the filename for reference/display, this prevents "Network Errors" 
-      // while maintaining the user experience of "syncing" their materials.
-      const res = await fetch(`/api/subjects/${subId}/materials`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify({ 
-          filename: file.name,
-          type: type
-        })
-      });
-      
-      const data = await res.json();
-      
-      if (res.ok) {
-        toast.success(`${type === 'textbook' ? 'Textbook' : 'Notes'} synchronized`, { id: toastId });
-        setSubjects(prev => prev.map(s => String(s.id) === String(subId) ? { ...s, [`${type}_url`]: file.name } : s));
-      } else {
-        toast.error(data.error || `Failed to sync ${type}`, { id: toastId });
-      }
-    } catch (err) {
-      toast.error(`Network error during ${type} synchronization. Ensure file is not corrupt.`, { id: toastId });
+    const formData = new FormData();
+    formData.append(type, file);
+    const res = await fetch(`/api/subjects/${subId}/materials`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: formData
+    });
+    if (res.ok) {
+      toast.success(`${type === 'textbook' ? 'Textbook' : 'Notes'} synchronized`);
+      // Update local state if needed
+      setSubjects(subjects.map(s => s.id.toString() === subId.toString() ? { ...s, [`${type}_url`]: file.name } : s));
     }
   };
 
@@ -196,13 +149,13 @@ export default function MyClasses() {
           <p className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Cinematic Academic Architecture</p>
         </div>
 
-        <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-          <DialogTrigger render={(props) => (
-            <div {...props} className="h-14 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 font-bold gap-3 btn-pulse flex items-center text-white cursor-pointer transition-all">
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button className="h-14 px-8 rounded-2xl bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 font-bold gap-3 btn-pulse">
               <Plus size={20} />
               Add Class
-            </div>
-          )} />
+            </Button>
+          </DialogTrigger>
           <DialogContent className="sm:max-w-[425px] glass-card border-none shadow-3xl rounded-[2.5rem] p-10 bg-white/90 dark:bg-slate-900/90">
             <DialogHeader className="mb-6">
               <DialogTitle className="text-3xl font-black tracking-tight text-slate-800 dark:text-white italic">Class Architecture</DialogTitle>
@@ -381,19 +334,10 @@ export default function MyClasses() {
                                           };
                                           input.click();
                                         }}
-                                        className={`h-11 w-full rounded-xl border-dashed transition-all duration-300 ${sub.textbook_url ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-white dark:bg-slate-900 border-primary/20 text-slate-500 hover:border-primary/40'} text-[9px] font-black uppercase tracking-widest gap-2 flex items-center justify-center`}
+                                        className={`h-10 w-full rounded-xl border-dashed border-primary/20 ${sub.textbook_url ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white dark:bg-slate-900 border-primary/20 text-slate-500'} text-[9px] font-black uppercase tracking-widest gap-2`}
                                       >
-                                         {sub.textbook_url ? (
-                                           <>
-                                             <CheckCircle2 size={16} className="text-emerald-500" />
-                                             <span>Synced</span>
-                                           </>
-                                         ) : (
-                                           <>
-                                             <Upload size={14} />
-                                             <span>Upload</span>
-                                           </>
-                                         )}
+                                         <Upload size={14} />
+                                         {sub.textbook_url ? 'Update' : 'Upload'}
                                       </Button>
                                    </div>
                                    <div className="space-y-2">
@@ -409,19 +353,10 @@ export default function MyClasses() {
                                           };
                                           input.click();
                                         }}
-                                        className={`h-11 w-full rounded-xl border-dashed transition-all duration-300 ${sub.notes_url ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-white dark:bg-slate-900 border-primary/20 text-slate-500 hover:border-primary/40'} text-[9px] font-black uppercase tracking-widest gap-2 flex items-center justify-center`}
+                                        className={`h-10 w-full rounded-xl border-dashed border-primary/20 ${sub.notes_url ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-white dark:bg-slate-900 border-primary/20 text-slate-500'} text-[9px] font-black uppercase tracking-widest gap-2`}
                                       >
-                                         {sub.notes_url ? (
-                                           <>
-                                             <CheckCircle2 size={16} className="text-emerald-500" />
-                                             <span>Synced</span>
-                                           </>
-                                         ) : (
-                                           <>
-                                             <Upload size={14} />
-                                             <span>Upload</span>
-                                           </>
-                                         )}
+                                         <Upload size={14} />
+                                         {sub.notes_url ? 'Update' : 'Upload'}
                                       </Button>
                                    </div>
                                 </div>
@@ -445,18 +380,7 @@ export default function MyClasses() {
                              className="h-16 rounded-[1.5rem] border-primary/10 bg-primary/5 dark:bg-primary/10 w-full flex-1" 
                            />
                            <Button onClick={handleAddStudent} className="h-16 rounded-[1.5rem] bg-primary hover:bg-primary/90 font-black w-full md:w-auto px-12 shrink-0 shadow-lg shadow-primary/20">Register</Button>
-                           
-                           <div className="hidden md:block w-px h-10 bg-primary/10 mx-2" />
-                           
-                           <Button 
-                             variant="outline" 
-                             onClick={() => setShowBulkImport(true)}
-                             className="h-16 rounded-[1.5rem] border-emerald-500/20 bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all font-black px-8 shrink-0 flex items-center gap-3 shadow-lg shadow-emerald-500/5 group"
-                           >
-                              <FileSpreadsheet size={20} className="group-hover:scale-110 transition-transform" />
-                              Bulk Import
-                           </Button>
-                        </div>
+                         </div>
 
                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
                             {students.map(stu => (
@@ -522,16 +446,6 @@ export default function MyClasses() {
           </AnimatePresence>
         </div>
       </div>
-
-      {activeClass && (
-        <BulkImportWizard 
-          isOpen={showBulkImport} 
-          onClose={() => setShowBulkImport(false)} 
-          classId={activeClass.id} 
-          onImportSuccess={() => handleSelectClass(activeClass)} 
-          token={token} 
-        />
-      )}
     </div>
   );
 }

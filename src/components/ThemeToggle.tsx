@@ -1,7 +1,7 @@
 import React from 'react';
 import { Moon, Sun } from 'phosphor-react';
 import { useTheme } from 'next-themes';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();

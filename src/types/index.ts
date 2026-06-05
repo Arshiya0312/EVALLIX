@@ -1,5 +1,5 @@
 export interface User {
-  id: string;
+  id: number;
   email: string;
   name: string;
   photo?: string;
@@ -7,33 +7,33 @@ export interface User {
 }
 
 export interface Class {
-  id: string;
+  id: number;
   name: string;
   semester: string;
   year: string;
   section: string;
-  faculty_id: string;
+  faculty_id: number;
 }
 
 export interface Subject {
-  id: string;
-  class_id: string;
+  id: number;
+  class_id: number;
   name: string;
   textbook_url?: string;
   notes_url?: string;
 }
 
 export interface Student {
-  id: string;
-  class_id: string;
+  id: number;
+  class_id: number;
   roll_no: string;
   name?: string;
 }
 
 export interface Evaluation {
-  id: string;
-  student_id: string;
-  subject_id: string;
+  id: number;
+  student_id: number;
+  subject_id: number;
   question_paper_url: string;
   answer_sheet_url: string;
   total_marks: number;

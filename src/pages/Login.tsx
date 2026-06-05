@@ -1,53 +1,38 @@
-import React from 'react';
-import logo from '../assets/images/evalix_red_grad_logo_1779726809684.png';
-import { motion } from 'motion/react';
+import React, { useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { GraduationCap } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export default function Login() {
   const { login } = useAuth();
-  const [facultyName, setFacultyName] = React.useState(() => localStorage.getItem('last_faculty_name') || '');
-  const [rememberMe, setRememberMe] = React.useState(true);
-  const [isLoading, setIsLoading] = React.useState(false);
 
-  const handleSimpleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!facultyName.trim()) {
-      toast.error("Please enter your name");
-      return;
-    }
-
-    if (rememberMe) {
-        localStorage.setItem('last_faculty_name', facultyName.trim());
-    } else {
-        localStorage.removeItem('last_faculty_name');
-    }
-
-    setIsLoading(true);
-    try {
-      const res = await fetch('/api/auth/simple', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: facultyName })
-      });
-      
-      const data = await res.json();
-      if (res.ok) {
-        login(data.token, data.user);
-        toast.success(`Welcome back, Prof. ${data.user.name}`);
-      } else {
-        const errorMsg = data.details ? `${data.error}: ${data.details}` : (data.error || "Authentication failed");
-        toast.error(errorMsg);
+  useEffect(() => {
+    const handleOAuthMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        const { token, user } = event.data;
+        login(token, user);
       }
+    };
+    window.addEventListener('message', handleOAuthMessage);
+    return () => window.removeEventListener('message', handleOAuthMessage);
+  }, [login]);
+
+  const handleGoogleLogin = async () => {
+    try {
+      const res = await fetch('/api/auth/google/url');
+      const { url } = await res.json();
+      
+      const width = 600;
+      const height = 700;
+      const left = window.innerWidth / 2 - width / 2;
+      const top = window.innerHeight / 2 - height / 2;
+      
+      window.open(url, 'google_login', `width=${width},height=${height},top=${top},left=${left}`);
     } catch (err) {
-      console.error(err);
-      toast.error("Connection error. Please try again.");
-    } finally {
-      setIsLoading(false);
+      toast.error("Cloud nodes unreachable. Try again later.");
     }
   };
 
@@ -67,9 +52,9 @@ export default function Login() {
               <motion.div 
                 animate={{ rotate: [0, 5, -5, 0], y: [0, -5, 0] }}
                 transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-                className="w-28 h-28 rounded-[2.5rem] flex items-center justify-center overflow-hidden shadow-2xl shadow-red-500/40 mb-10 relative group"
+                className="w-28 h-28 bg-gradient-to-br from-[#E63939] to-red-700 rounded-[2.5rem] flex items-center justify-center text-white shadow-2xl shadow-red-500/40 mb-10 relative group"
               >
-                <img src={logo} alt="Evalix Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <GraduationCap size={56} />
                 <div className="absolute inset-0 bg-white/20 rounded-[2.5rem] scale-90 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
               </motion.div>
               <h1 className="text-5xl font-black tracking-tighter text-slate-800 mb-3">Evalix <span className="text-[#E63939]">AI</span></h1>
@@ -79,40 +64,47 @@ export default function Login() {
             <div className="space-y-8">
               <div className="p-8 rounded-3xl bg-red-50/50 border border-red-100 text-left mb-10 relative overflow-hidden group">
                 <p className="text-sm text-slate-600 font-bold leading-relaxed relative z-10">
-                  Welcome to the Faculty Hub. Please enter your name to access the forensic academic evaluation engine.
+                  Welcome to the Faculty Hub. Use your institutional Google credentials to access high-fidelity assessment nodes.
                 </p>
                 <div className="absolute top-0 right-0 w-24 h-24 bg-red-500/[0.05] rounded-full blur-2xl -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700" />
               </div>
 
-              <form onSubmit={handleSimpleLogin} className="flex flex-col gap-6">
-                <div className="space-y-2 text-left px-2">
-                  <Label htmlFor="facultyName" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Full Name</Label>
-                  <Input 
-                    id="facultyName"
-                    placeholder="e.g. Dr. Ramesh Kumar"
-                    value={facultyName}
-                    onChange={(e) => setFacultyName(e.target.value)}
-                    className="h-16 rounded-2xl border-2 border-red-100 bg-white/50 focus:border-red-500 transition-all text-lg font-bold"
-                  />
-                </div>
-                <div className="flex items-center gap-3 px-2">
-                   <input 
-                     type="checkbox" 
-                     id="remember" 
-                     checked={rememberMe} 
-                     onChange={(e) => setRememberMe(e.target.checked)}
-                     className="w-5 h-5 rounded-md border-red-100 text-[#E63939] focus:ring-[#E63939]"
-                   />
-                   <Label htmlFor="remember" className="text-[10px] font-black uppercase tracking-widest text-slate-500 cursor-pointer">Remember my faculty node</Label>
-                </div>
+              <div className="flex flex-col gap-5">
                 <Button 
-                  type="submit"
-                  disabled={isLoading}
+                  onClick={handleGoogleLogin}
                   className="w-full h-20 rounded-[2rem] bg-[#E63939] text-white hover:bg-red-700 font-black text-xl flex items-center justify-center gap-5 transition-all shadow-2xl shadow-red-500/30 active:scale-95 btn-pulse"
                 >
-                  {isLoading ? "Authenticating..." : "Faculty Login"}
+                  <img src="https://www.google.com/favicon.ico" className="w-7 h-7 bg-white p-1 rounded-full shadow-sm" />
+                  Faculty Sign In
                 </Button>
-              </form>
+
+                <div className="flex items-center gap-6 py-2">
+                  <div className="h-px flex-1 bg-red-100" />
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">or</span>
+                  <div className="h-px flex-1 bg-red-100" />
+                </div>
+
+                <Button 
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/auth/demo', { method: 'POST' });
+                      const data = await res.json();
+                      if (res.ok) {
+                        login(data.token, data.user);
+                        toast.success("Identity Bypass: Demo Session Active");
+                      } else {
+                        throw new Error(data.error || "Demo auth failed");
+                      }
+                    } catch (e: any) {
+                      toast.error(e.message);
+                    }
+                  }}
+                  variant="ghost"
+                  className="w-full h-16 rounded-[2rem] border-2 border-red-100 text-[#E63939] hover:bg-red-50 font-black tracking-widest uppercase text-xs"
+                >
+                  Enter via Demo Gateway
+                </Button>
+              </div>
 
               <div className="pt-10 flex flex-col items-center gap-4">
                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-[0.4em]">

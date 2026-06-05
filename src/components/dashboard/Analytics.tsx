@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import { GlassCard } from '../GlassCard';
 import { Badge } from '../UI';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 
 interface AnalyticsProps {
   token: string;

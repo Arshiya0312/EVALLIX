@@ -1,5 +1,4 @@
 import React from 'react';
-import logo from '../../assets/images/evalix_red_grad_logo_1779726809684.png';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { 
   LayoutDashboard, 
@@ -10,19 +9,17 @@ import {
   Moon, 
   Sun,
   Settings,
-  GraduationCap,
-  ClipboardList
+  GraduationCap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/hooks/useAuth';
-import { motion } from 'motion/react';
-import { toast } from 'sonner';
+import { motion } from 'framer-motion';
 
 const navItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'My Classes', path: '/classes', icon: UserSquare2 },
-  { label: 'Rubric Library', path: '/rubrics', icon: ClipboardList },
   { label: 'Evaluation', path: '/evaluate', icon: BookOpen },
   { label: 'Reports', path: '/reports', icon: BarChart3 },
   { label: 'Settings', path: '/settings', icon: Settings },
@@ -31,11 +28,6 @@ const navItems = [
 export const Layout = ({ children }: { children: React.ReactNode }) => {
   const { user, logout } = useAuth();
   const [isDark, setIsDark] = React.useState(document.documentElement.classList.contains('dark'));
-
-  const handleLogout = () => {
-    logout();
-    toast.info('Session disconnected');
-  };
 
   const toggleTheme = () => {
     const root = document.documentElement;
@@ -54,16 +46,16 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl -mr-16 -mt-16" />
         
         <div className="flex items-center gap-3 px-2 relative z-10">
-          <div className="h-12 w-12 rounded-2xl overflow-hidden shrink-0 shadow-xl shadow-primary/20">
-            <img src={logo} alt="Evalix Logo" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white shadow-lg shadow-primary/30">
+            <GraduationCap size={24} />
           </div>
           <div>
-            <h1 className="font-black text-xl tracking-tighter leading-none">Evalix</h1>
-            <p className="text-[9px] text-primary font-black uppercase tracking-[0.2em] mt-1">EVALUATION READY</p>
+            <h1 className="font-bold text-xl tracking-tight">Evalix <span className="text-primary">Pro</span></h1>
+            <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Intelligent Eval</p>
           </div>
         </div>
 
-        <nav className="flex-1 flex flex-col gap-2 relative z-10 overflow-y-auto pr-2 custom-scrollbar">
+        <nav className="flex-1 flex flex-col gap-2 relative z-10">
           {navItems.map((item) => (
             <NavLink
               key={item.path}
@@ -85,7 +77,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           ))}
         </nav>
 
-        <div className="mt-auto flex flex-col gap-6 relative z-10 pt-4 border-t border-primary/5">
+        <div className="flex flex-col gap-6 relative z-10">
           <div className="flex items-center justify-between px-2">
             <Button variant="ghost" size="icon" onClick={toggleTheme} className="rounded-xl w-12 h-12 hover:bg-primary/10 hover:text-primary">
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
@@ -101,19 +93,24 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           
           <div className="flex items-center justify-between px-2">
             <div className="flex items-center gap-3">
+              <Avatar className="h-10 w-10 border-2 border-primary/20">
+                <AvatarImage src={user?.photo} />
+                <AvatarFallback className="bg-primary text-white">{user?.name?.[0]}</AvatarFallback>
+              </Avatar>
               <div className="flex flex-col">
                 <span className="text-sm font-bold truncate max-w-[120px]">{user?.name || 'Faculty'}</span>
+                <span className="text-[10px] text-muted-foreground font-medium">Verified AI Expert</span>
               </div>
             </div>
           </div>
 
           <Button 
             variant="ghost" 
-            onClick={handleLogout}
-            className="w-full justify-start gap-3 rounded-2xl text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 px-4 h-12 border border-transparent hover:border-red-100 dark:hover:border-red-900/30 transition-all shadow-sm"
+            onClick={logout}
+            className="w-full justify-start gap-3 rounded-2xl text-primary hover:text-primary/80 hover:bg-primary/10 px-4 h-12"
           >
             <LogOut size={18} />
-            <span className="font-bold text-sm">Sign Out</span>
+            <span className="font-semibold text-sm">Sign Out</span>
           </Button>
         </div>
       </motion.aside>
@@ -133,21 +130,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                    <p className="text-sm font-extrabold italic">Evalix — Intelligence in Every Evaluation</p>
                 </div>
              </div>
-             <div className="flex gap-4 items-center">
-                <Button 
-                   variant="outline" 
-                   size="sm" 
-                   onClick={handleLogout}
-                   className="text-[10px] font-black uppercase tracking-[0.2em] text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 gap-2 h-9 px-4 rounded-xl border border-red-100 dark:border-red-900/30 transition-all"
-                >
-                   <LogOut size={14} />
-                   Sign Out
-                </Button>
+             <div className="flex gap-4">
                 {/* Visual accents */}
-                <div className="hidden md:flex gap-4">
-                   <div className="h-1 w-12 bg-primary rounded-full opacity-20" />
-                   <div className="h-1 w-6 bg-primary rounded-full opacity-10" />
-                </div>
+                <div className="h-1 w-12 bg-primary rounded-full opacity-20" />
+                <div className="h-1 w-6 bg-primary rounded-full opacity-10" />
              </div>
           </header>
 

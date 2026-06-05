@@ -1,5 +1,4 @@
 import React from 'react';
-import logo from '../assets/images/evalix_red_grad_logo_1779726809684.png';
 import { 
   ShieldCheck, 
   SignOut, 
@@ -10,7 +9,7 @@ import {
   FileText,
   UserGear
 } from 'phosphor-react';
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 import { Separator, Badge } from './UI';
 import { ViewType, Subject } from '../types';
 
@@ -43,17 +42,12 @@ export function Sidebar({
     >
       <div className="h-20 flex items-center px-6 justify-between">
          <div className={`flex items-center gap-3 overflow-hidden ${isOpen ? 'opacity-100' : 'opacity-0 w-0 transition-all duration-300'}`}>
-            <div className="w-10 h-10 rounded-2xl flex items-center justify-center overflow-hidden shrink-0">
-               <img 
-                 src={logo} 
-                 alt="Evalix Logo" 
-                 className="w-full h-full object-cover"
-                 referrerPolicy="no-referrer"
-               />
+            <div className="w-10 h-10 bg-gradient-to-br from-brand-primary to-brand-accent rounded-2xl flex items-center justify-center text-white shadow-lg shadow-brand-primary/20 shrink-0">
+               <ShieldCheck size={24} weight="bold" />
             </div>
             <div className="flex flex-col">
-              <h1 className="text-lg font-black tracking-tighter whitespace-nowrap leading-tight">Evalix</h1>
-              <span className="text-[10px] font-bold text-brand-primary uppercase tracking-[0.2em] leading-none">EVALUATION READY</span>
+              <h1 className="text-lg font-black tracking-tighter whitespace-nowrap leading-tight">SmartEval</h1>
+              <span className="text-[10px] font-bold text-brand-primary uppercase tracking-[0.2em] leading-none">Intelligence</span>
             </div>
          </div>
          <button onClick={() => setIsOpen(!isOpen)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/5 rounded-xl text-slate-400">

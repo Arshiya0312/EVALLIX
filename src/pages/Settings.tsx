@@ -1,19 +1,17 @@
 import React from 'react';
-import { motion } from 'motion/react';
-import { User, Bell, Shield, Palette, Save, Camera, CheckCircle, FileText, Download, LogOut, Database, RefreshCw, Archive } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { User, Bell, Shield, Palette, Save, Camera, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
-import { jsPDF } from 'jspdf';
-import { useNavigate } from 'react-router-dom';
 
 export default function Settings() {
-  const { user, token, login, logout } = useAuth();
-  const navigate = useNavigate();
+  const { user, token, login } = useAuth();
   const [activeTab, setActiveTab] = React.useState('Profile Identity');
   const [profile, setProfile] = React.useState({
     name: user?.name || '',
@@ -65,127 +63,9 @@ export default function Settings() {
   const tabs = [
     { label: 'Profile Identity', icon: User },
     { label: 'Neural Alerts', icon: Bell },
-    { label: 'Data Integrity', icon: Database },
     { label: 'Access Control', icon: Shield },
     { label: 'Visual Interface', icon: Palette },
-    { label: 'System Compliance', icon: FileText },
-    { label: 'Session Management', icon: LogOut },
   ];
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
-
-  const downloadSystemManifest = () => {
-    const doc = new jsPDF();
-    const primaryColor = '#FF4D4D';
-    
-    // Header
-    doc.setFillColor( primaryColor );
-    doc.rect(0, 0, 210, 40, 'F');
-    doc.setTextColor('#FFFFFF');
-    doc.setFontSize(24);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Evalix Technical Manifest', 20, 25);
-    
-    // Content
-    doc.setTextColor('#333333');
-    doc.setFontSize(10);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 50);
-    
-    const sections = [
-      {
-        title: '1. DATABASE ARCHITECTURE',
-        content: 'System utilizes a high-performance SQLite 3 engine for relational data persistence. \nRecords include Faculty profiles, Institutional classes, Student registries, and Neural evaluation logs.'
-      },
-      {
-        title: '2. NEURAL CORE (AI MODEL)',
-        content: 'Engine: Google Gemini 2.0 Flash (Advanced Multimodal Model).\nTemperature: 0.0 (Strict Determinism).\nProcessing: Real-time OCR and semantic analysis of handwritten academic scripts.'
-      },
-      {
-        title: '3. STORAGE & PERSISTENCE',
-        content: 'Persistence: Permanent (File-system based in AI Studio workspace).\nCapacity: Scalable workspace disk (optimized for volumes up to 500MB).\nCleanup: Manual deletion via application dashboard or workspace reset.'
-      },
-      {
-        title: '4. SYSTEM LIMITS',
-        content: 'API Concurrency: 15 Request Per Minute (RPM) - Base Tier.\nEvaluation Tokens: Up to 1M context window per session.\nFile Types: JPEG, PNG, PDF (Optical Analysis Optimized).'
-      },
-      {
-        title: '5. EVALUATION CRITERIA',
-        content: 'Protocol: Rubric-adherence logic.\nScoring: Mathematical weightage based on conceptual keyword matching and depth analysis.\nFairness: Algorithmic bias mitigation via objective reference comparison.'
-      }
-    ];
-
-    let yOffset = 65;
-    sections.forEach(sec => {
-      doc.setFontSize(14);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(primaryColor);
-      doc.text(sec.title, 20, yOffset);
-      
-      doc.setFontSize(11);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor('#444444');
-      const lines = doc.splitTextToSize(sec.content, 170);
-      doc.text(lines, 20, yOffset + 10);
-      
-      yOffset += 15 + (lines.length * 7);
-    });
-
-    // Footer
-    doc.setFontSize(8);
-    doc.setTextColor('#999999');
-    doc.text('© 2026 Evalix AI Academic Intelligence Protocol', 20, 280);
-
-    doc.save('Evalix_System_Manifest.pdf');
-    toast.success("System documentation exported.");
-  };
-
-   const handleMigrate = async () => {
-    toast.loading("Initiating neural data migration...");
-    try {
-      const res = await fetch('/api/admin/migrate', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        toast.dismiss();
-        toast.success(`Migration Successful. Synced: ${Object.values(data.summary).reduce((a: any, b: any) => a + b, 0)} records.`);
-      } else {
-        toast.dismiss();
-        toast.error("Migration protocol aborted by firewall.");
-      }
-    } catch (e) {
-      toast.dismiss();
-      toast.error("Neural link timeout.");
-    }
-  };
-
-  const handleBackup = async () => {
-    toast.loading("Compiling full localized backup...");
-    try {
-      const res = await fetch('/api/admin/backup', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const blob = await res.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `Evalix_Backup_${new Date().toISOString()}.json`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        toast.dismiss();
-        toast.success("Backup archive downloaded successfully.");
-      }
-    } catch (e) {
-      toast.dismiss();
-      toast.error("Backup sequence failed.");
-    }
-  };
 
   return (
     <div className="space-y-12 pb-20">
@@ -218,7 +98,21 @@ export default function Settings() {
                    <CardDescription className="font-bold text-slate-500 uppercase text-[10px] tracking-widest mt-2">Manage your faculty credentials and visibility.</CardDescription>
                  </CardHeader>
                  <CardContent className="p-10 space-y-10">
-                    <div className="flex flex-col md:flex-row gap-10 items-center md:items-start">
+                   <div className="flex flex-col md:flex-row gap-10 items-center md:items-start">
+                      <div className="relative group">
+                        <Avatar className="h-32 w-32 border-4 border-primary/10 shadow-2xl">
+                          <AvatarImage src={user?.photo} />
+                          <AvatarFallback className="bg-primary text-white text-4xl font-black">{user?.name?.[0]}</AvatarFallback>
+                        </Avatar>
+                        <Button 
+                          onClick={handlePhotoUpload}
+                          size="icon" 
+                          className="absolute bottom-0 right-0 h-10 w-10 rounded-full bg-white dark:bg-slate-800 shadow-xl border border-primary/10 text-primary opacity-0 group-hover:opacity-100 transition-all scale-75 group-hover:scale-100"
+                        >
+                           <Camera size={18} />
+                        </Button>
+                      </div>
+                      
                       <div className="flex-1 space-y-6 w-full">
                         <div className="grid gap-3">
                           <Label className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Academic Nomenclature</Label>
@@ -288,57 +182,7 @@ export default function Settings() {
              </Card>
            )}
 
-            {activeTab === 'Data Integrity' && (
-              <div className="space-y-8">
-                <Card className="glass-card border-none rounded-[3rem] overflow-hidden">
-                  <CardHeader className="p-10">
-                    <CardTitle className="text-3xl font-black tracking-tight text-slate-800 dark:text-white italic">Neural Data Management</CardTitle>
-                    <CardDescription className="font-bold text-slate-500 uppercase text-[10px] tracking-widest mt-2">Maintain database health and perform systemic backups.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-10 space-y-12">
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="p-10 rounded-[2.5rem] bg-emerald-500/5 border border-emerald-500/10 flex flex-col gap-6">
-                           <div className="w-16 h-16 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                              <RefreshCw size={32} />
-                           </div>
-                           <div>
-                              <h4 className="text-xl font-black text-slate-800 dark:text-white mb-2">Structure Migration</h4>
-                              <p className="text-xs text-slate-500 font-bold leading-relaxed mb-6">Ports legacy/temporary records into production clusters and ensures unique identity bindings across the neural web.</p>
-                              <Button onClick={handleMigrate} className="w-full h-14 rounded-2xl bg-emerald-500 hover:bg-emerald-600 font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/10 gap-3">
-                                 <RefreshCw size={18} /> Run Migration Script
-                              </Button>
-                           </div>
-                        </div>
-
-                        <div className="p-10 rounded-[2.5rem] bg-primary/5 border border-primary/10 flex flex-col gap-6">
-                           <div className="w-16 h-16 rounded-2xl bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/20">
-                              <Archive size={32} />
-                           </div>
-                           <div>
-                              <h4 className="text-xl font-black text-slate-800 dark:text-white mb-2">Production Export</h4>
-                              <p className="text-xs text-slate-500 font-bold leading-relaxed mb-6">Generates a complete JSON snapshot of your faculty profile, student roster, and evaluation history for secure archiving.</p>
-                              <Button onClick={handleBackup} className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 font-black text-[10px] uppercase tracking-widest shadow-lg shadow-primary/10 gap-3">
-                                 <Download size={18} /> Download Local Backup
-                              </Button>
-                           </div>
-                        </div>
-                     </div>
-
-                     <div className="p-8 rounded-[2rem] bg-slate-50 border border-slate-100 flex items-start gap-4">
-                        <div className="p-3 bg-white rounded-xl shadow-sm text-amber-500">
-                           <Shield size={20} />
-                        </div>
-                        <div>
-                           <h5 className="text-sm font-black text-slate-800 mb-1">Data Integrity Protocol</h5>
-                           <p className="text-[10px] font-bold text-slate-500 leading-relaxed uppercase tracking-wide">Automatic background preservation is active. Your student roster and evaluation states are periodically mirrored to localized storage to prevent data loss during heavy operations.</p>
-                        </div>
-                     </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-
-            {activeTab === 'Access Control' && (
+           {activeTab === 'Access Control' && (
              <Card className="glass-card border-none rounded-[3rem] overflow-hidden">
                <CardHeader className="p-10">
                  <CardTitle className="text-3xl font-black tracking-tight text-slate-800 dark:text-white italic">Access Control</CardTitle>
@@ -379,42 +223,6 @@ export default function Settings() {
                           animate={{ x: visuals['Cinematic Transitions'] ? 24 : 4 }}
                           className="absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm" 
                         />
-                     </div>
-                  </div>
-               </CardContent>
-             </Card>
-           )}
-
-           {activeTab === 'Session Management' && (
-             <Card className="glass-card border-none rounded-[3rem] overflow-hidden border-2 border-red-500/10">
-               <CardHeader className="p-10">
-                 <CardTitle className="text-3xl font-black tracking-tight text-slate-800 dark:text-white italic">Session Management</CardTitle>
-                 <CardDescription className="font-bold text-slate-500 uppercase text-[10px] tracking-widest mt-2">Terminate active neural connection and clear local cache.</CardDescription>
-               </CardHeader>
-               <CardContent className="p-10 space-y-12">
-                  <div className="p-10 rounded-[2rem] bg-red-50 dark:bg-red-950/10 border border-red-100 dark:border-red-900/20 flex flex-col items-center justify-center text-center gap-6">
-                     <div className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-500">
-                        <LogOut size={40} />
-                     </div>
-                     <div>
-                        <h4 className="text-xl font-black text-slate-800 dark:text-white mb-2">Nuclear Session Termination</h4>
-                        <p className="text-sm text-slate-500 font-medium max-w-md mx-auto">This will immediately invalidate your current access token and redirect you to the login portal. Ensure all neural synchronizations are complete.</p>
-                     </div>
-                     <Button 
-                       onClick={handleLogout}
-                       className="h-16 px-12 rounded-2xl bg-red-500 hover:bg-red-600 font-black shadow-xl shadow-red-500/20 gap-3 text-lg"
-                     >
-                       <LogOut size={24} />
-                       Terminate Session
-                     </Button>
-                  </div>
-
-                  <div className="space-y-4">
-                     <Label className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Security Logs</Label>
-                     <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 font-mono text-[10px] text-slate-400 space-y-1">
-                        <p>[{new Date().toISOString()}] - Session Initialized via Google OAuth</p>
-                        <p>[{new Date().toISOString()}] - Metadata Synchronized with Core</p>
-                        <p>[{new Date().toISOString()}] - RSA Token Verified</p>
                      </div>
                   </div>
                </CardContent>
